@@ -1,0 +1,69 @@
+services:
+
+  db:
+    image: postgres:13
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - backend_network
+
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
+    volumes:
+      - ./server.json:/pgadmin4/servers.json
+    ports:
+      - "5050:80"
+    networks:
+      - backend_network
+
+  backend:
+    build:
+      context: ./backend
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      - ./fastapi:/src
+    command: uv run uvicorn app:app --host 0.0.0.0 --port 8000 --reload
+    depends_on:
+      - db
+    networks:
+      - backend_network
+
+  nextjs:
+    build:
+      context: ./nextjs
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    volumes:
+      - ./nextjs:/src
+      - /src/node_modules # This masks the node_modules directory from the host system and prevents it from being mapped from your local filesystem. The container will manage its own node_modules directory.
+    working_dir: /src
+    command: npm run dev
+    networks:
+      - backend_network
+
+volumes:
+  postgres_data:
+    driver: local
+    driver_opts:
+      type: none
+      device: ${PWD}/data
+      o: bind
+
+networks:
+  backend_network:
+    driver: bridge
