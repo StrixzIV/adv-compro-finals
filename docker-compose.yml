@@ -1,6 +1,7 @@
 services:
 
   db:
+    container_name: adv-compro-db
     image: postgres:13
     ports:
       - "5432:5432"
@@ -14,8 +15,8 @@ services:
       - backend_network
 
   pgadmin:
+    container_name: adv-compro-pgadmin
     image: dpage/pgadmin4
-    container_name: pgadmin
     environment:
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
@@ -27,11 +28,11 @@ services:
       - backend_network
 
   frontend:
+    container_name: adv-compro-frontend
     build:
       context: ./frontend
       dockerfile: Dockerfile
       target: runtime
-    container_name: frontend_app
     ports:
       - "3000:3000"
     networks:
@@ -47,6 +48,7 @@ services:
       retries: 3
 
   backend:
+    container_name: adv-compro-backend
     build:
       context: ./backend
     ports:
