@@ -34,27 +34,32 @@ services:
     env_file:
       - .env
     volumes:
-      - ./fastapi:/src
-    command: uv run uvicorn app:app --host 0.0.0.0 --port 8000 --reload
+      - ./backend/src:/var/backend/src:rw
+      - ./backend/tools:/var/backend/tools:ro
     depends_on:
       - db
     networks:
       - backend_network
+    develop:
+      watch:
+        - action: rebuild
+          path: backend/src/pyproject.toml
 
-  nextjs:
-    build:
-      context: ./nextjs
-    ports:
-      - "3000:3000"
-    env_file:
-      - .env
-    volumes:
-      - ./nextjs:/src
-      - /src/node_modules # This masks the node_modules directory from the host system and prevents it from being mapped from your local filesystem. The container will manage its own node_modules directory.
-    working_dir: /src
-    command: npm run dev
-    networks:
-      - backend_network
+
+  # nextjs:
+  #   build:
+  #     context: ./nextjs
+  #   ports:
+  #     - "3000:3000"
+  #   env_file:
+  #     - .env
+  #   volumes:
+  #     - ./nextjs:/src
+  #     - /src/node_modules # This masks the node_modules directory from the host system and prevents it from being mapped from your local filesystem. The container will manage its own node_modules directory.
+  #   working_dir: /src
+  #   command: npm run dev
+  #   networks:
+  #     - backend_network
 
 volumes:
   postgres_data:

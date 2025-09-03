@@ -1,16 +1,28 @@
 # Shell
 SHELL := /usr/bin/env bash
+VOL_DATA_DIR = data
 
 # Rules
 all: up
 
-up:
+VOLUMES=$(VOL_DATA_DIR)
+
+volumes: $(VOL_DATA_DIR)
+
+$(VOL_VENV_DIR):
+	mkdir -p $(VOL_VENV_DIR)
+
+up: volumes
+	@echo "Starting docker-compose daemon..."
+	@docker compose up -d --build --remove-orphans
+
+dev: volumes
 	@echo "Starting docker-compose..."
-	@docker-compose up -d --build --remove-orphans
+	@docker compose up --build --remove-orphans
 
 down:
 	@echo "Stopping docker-compose..."
-	@docker-compose down
+	@docker compose down
 
 prune:
 	@echo "Pruning..."
@@ -25,7 +37,7 @@ list:
 
 fclean: down prune
 	@echo "Cleaning..."
-	@rm -rf $(SSL_DIRS)
+	@rm -rf $(SSL_DIRS) $(VOLUMES)
 	@docker stop $(docker ps -qa) 2>/dev/null || true
 	@docker rm $(docker ps -qa) 2>/dev/null || true
 	@docker rmi -f $(docker images -qa) 2>/dev/null || true
@@ -34,4 +46,4 @@ fclean: down prune
 
 re: down up
 
-.PHONY: up down prune list fclean re
+.PHONY: up dev down prune list fclean re
