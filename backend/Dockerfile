@@ -2,12 +2,15 @@
 FROM    alpine:3.22.1 AS build
 WORKDIR /var/backend/src
 
-# The magic is here.
-ENV     UV_CACHE_DIR=/home/alpine/.local
-ENV     UV_PYTHON_INSTALL_DIR=/usr/share/uv/python
+ENV     HOME=/home/alpine
+ENV     UV_CACHE_DIR=${HOME}/.local
+ENV     PATH=${UV_CACHE_DIR}/bin:$PATH
 
 # Setup dependencies, and user
-RUN     apk add --no-cache uv
+RUN     apk add --no-cache curl ca-certificates build-base
+RUN     curl -LsSf https://astral.sh/uv/install.sh | sh
+
+RUN     uv python install 3.10
 
 # Build UV inside of /var/backend/src (because relative path)
 COPY    src .
@@ -19,11 +22,10 @@ FROM    alpine:3.22.1 AS runtime
 WORKDIR /var/backend/src
 
 ENV     UV_CACHE_DIR=/home/alpine/.local
-ENV     UV_PYTHON_INSTALL_DIR=/usr/share/uv/python
+ENV     PATH=${UV_CACHE_DIR}/bin:$PATH
 
 RUN     adduser -D alpine
 
-COPY    --from=build /usr/share/uv /usr/share/uv
 COPY    --from=build --chown=alpine:alpine /var/backend/src/.venv /var/backend/venv/
 COPY    --from=build --chown=alpine:alpine ${UV_CACHE_DIR} ${UV_CACHE_DIR}
 

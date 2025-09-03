@@ -9,8 +9,8 @@ VOLUMES=$(VOL_DATA_DIR)
 
 volumes: $(VOL_DATA_DIR)
 
-$(VOL_VENV_DIR):
-	mkdir -p $(VOL_VENV_DIR)
+$(VOL_DATA_DIR):
+	mkdir -p $(VOL_DATA_DIR)
 
 up: volumes
 	@echo "Starting docker-compose daemon..."

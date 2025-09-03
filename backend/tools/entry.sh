@@ -8,7 +8,7 @@ if [ ! -e .venv ]; then
 fi
 
 # Run uvicorn and detach process
-.venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000 --reload &
+uv run uvicorn main:app --host 0.0.0.0 --port 8000 --reload &
 
 # Passthrough hault signals to uvicorn
 child=$!
