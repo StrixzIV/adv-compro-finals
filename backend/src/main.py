@@ -1,10 +1,12 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-import signal
+
+from routes.healthcheck import healthcheck_route
 
 from db import connect_db, disconnect_db
 
 app = FastAPI()
+app.include_router(healthcheck_route, prefix="/api/v1")
 
 app.add_middleware(
     CORSMiddleware,
@@ -21,9 +23,3 @@ async def startup():
 @app.on_event("shutdown")
 async def shutdown():
     await disconnect_db()
-
-def signal_handler(sig, frame):
-    print(f"Received signal {sig}")
-
-signal.signal(signal.SIGTERM, signal_handler)
-signal.signal(signal.SIGINT, signal_handler)
