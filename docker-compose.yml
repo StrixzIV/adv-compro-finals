@@ -26,6 +26,26 @@ services:
     networks:
       - backend_network
 
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: runtime
+    container_name: frontend_app
+    ports:
+      - "3000:3000"
+    networks:
+      - backend_network
+    restart: unless-stopped
+    depends_on:
+      - db
+      - backend
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
   backend:
     build:
       context: ./backend
