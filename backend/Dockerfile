@@ -9,18 +9,17 @@ ENV     UV_CACHE_DIR=${HOME}/.local
 RUN     apk add --no-cache curl ca-certificates build-base
 RUN     curl -LsSf https://astral.sh/uv/install.sh | sh
 
-ENV     PATH=${UV_CACHE_DIR}/bin:$PATH
-RUN     uv python install 3.10
-
-# Build UV inside of /var/backend/src (because relative path)
+# Copy src file content here for building uv
 COPY    src .
 
-# Lock the deps if not found.
-RUN     if [ ! -f uv.lock ]; then uv lock; fi
-
-# Install the deps from lock.
-RUN     rm -f .venv
-RUN     uv sync --compile-bytecode --frozen
+# Install python 3.10, lock uv if not found, and sync uv.
+RUN     PATH=${UV_CACHE_DIR}/bin:$PATH; \
+uv python install 3.10; \
+if [ ! -f uv.lock ]; then \
+    uv lock; \
+fi; \
+rm -f .venv; \
+uv sync --compile-bytecode --frozen
 
 # Strip uv backend binary of unused symbols
 RUN     find ${UV_CACHE_DIR}/bin -type f -exec strip --strip-unneeded {} \;
