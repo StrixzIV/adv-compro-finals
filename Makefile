@@ -18,7 +18,7 @@ up: volumes
 
 dev: volumes
 	@echo "Starting docker-compose..."
-	@docker compose up --build --remove-orphans
+	@DEV=1 docker compose up --build --remove-orphans
 
 down:
 	@echo "Stopping docker-compose..."
