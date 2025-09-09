@@ -2,13 +2,12 @@
 
 set -euo pipefail
 
-# Symlink image built venv
-if [ ! -e .venv ]; then
-    ln -s /var/backend/venv .venv
-fi
-
 # Run uvicorn and detach process
-uv run uvicorn main:app --host 0.0.0.0 --port 8000 --reload &
+if [ -n "$DEV" ]; then
+  uv run uvicorn main:app --host 0.0.0.0 --port 8000 --reload &
+else
+  uv run uvicorn main:app --host 0.0.0.0 --port 8000 &
+fi
 
 # Passthrough hault signals to uvicorn
 child=$!

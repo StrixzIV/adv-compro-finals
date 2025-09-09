@@ -55,6 +55,8 @@ services:
       - "8000:8000"
     env_file:
       - .env
+    environment:
+      - DEV=${DEV-}
     volumes:
       - ./backend/src:/var/backend/src:rw
       - ./backend/tools:/var/backend/tools:ro
@@ -65,8 +67,11 @@ services:
     develop:
       watch:
         - action: rebuild
+          path: backend/Dockerfile
+        - action: rebuild
           path: backend/src/pyproject.toml
-
+        - action: rebuild
+          path: backend/tools/
 
   # nextjs:
   #   build:
