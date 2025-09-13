@@ -47,6 +47,10 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    develop:
+      watch:
+        - action: rebuild
+          path:   frontend/src
 
   backend:
     container_name: adv-compro-backend
