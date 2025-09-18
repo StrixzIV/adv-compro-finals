@@ -1,7 +1,7 @@
-import os
 import jwt
 import uuid
 import aiohttp
+from lib.environ import env, env_single_use
 
 from fastapi import APIRouter, status, Request
 from fastapi.responses import RedirectResponse, Response
@@ -12,8 +12,8 @@ oauth_route = APIRouter(prefix = '/oauth')
 async def oauth_redirect():
 
     params = {
-        'client_id': os.environ['GOOGLE_OAUTH_CLIENT_ID'],
-        'redirect_uri': 'http://localhost:8000/api/v1/oauth/callback',
+        'client_id': env.GOOGLE_OAUTH_CLIENT_ID,
+        'redirect_uri': f'{env.HOST_URL}/api/v1/oauth/callback',
         'response_type': 'code',
         'scope': 'openid email profile',
         'access_type': 'offline',
@@ -26,17 +26,18 @@ async def oauth_redirect():
 
     return RedirectResponse(auth_url, status_code=status.HTTP_302_FOUND)
 
-
 @oauth_route.get('/callback')
-async def oauth_callback(request: Request):
+async def oauth_callback(request: Request, secrets={
+    "client_secret": env_single_use("GOOGLE_OAUTH_CLIENT_SECRETS")
+}):
 
     code = request.query_params.get('code')
-    
+
     token_params = {
         'code': code,
-        'client_id': os.environ['GOOGLE_OAUTH_CLIENT_ID'],
-        'client_secret': os.environ['GOOGLE_OAUTH_CLIENT_SECRETS'],
-        'redirect_uri': 'http://localhost:8000/api/v1/oauth/callback',
+        'client_id': env.GOOGLE_OAUTH_CLIENT_ID,
+        'client_secret': secrets.client_secret,
+        'redirect_uri': f'{env.HOST_URL}/api/v1/oauth/callback',
         'grant_type': 'authorization_code'
     }
 
@@ -49,18 +50,18 @@ async def oauth_callback(request: Request):
 
                 if resp.status != 200:
                     print(f"Error exchanging token: {await resp.text()}")
-                    return RedirectResponse('http://localhost:3000?error=token_exchange_failed', status_code=status.HTTP_302_FOUND)
+                    return RedirectResponse(f"{env.FASTAPI_URL}?error=token_exchange_failed", status_code=status.HTTP_302_FOUND)
 
                 token_data = await resp.json()
 
         except aiohttp.ClientError as e:
             print(f"Network error during token exchange: {e}")
-            return RedirectResponse('http://localhost:3000?error=network_error', status_code=status.HTTP_302_FOUND)
+            return RedirectResponse(f"{env.FASTAPI_URL}?error=network_error", status_code=status.HTTP_302_FOUND)
 
         id_token = token_data.get('id_token')
         
         if not id_token:
-            return RedirectResponse('http://localhost:3000?error=no_id_token', status_code=status.HTTP_302_FOUND)
+            return RedirectResponse(f"{env.FASTAPI_URL}?error=no_id_token", status_code=status.HTTP_302_FOUND)
 
         try:
 
@@ -75,9 +76,9 @@ async def oauth_callback(request: Request):
             # Redirect the user to your front-end with their info.
             # This is just an example; a better approach would be to set a session
             # or a cookie and not expose this in the URL.
-            redirect_url = f"http://localhost:3000/?email={user_email}&name={user_name}"
+            redirect_url = f"{env.FASTAPI_URL}/?email={user_email}&name={user_name}"
             return RedirectResponse(redirect_url, status_code=status.HTTP_302_FOUND)
 
         except jwt.exceptions.DecodeError as e:
             print(f"Error decoding JWT token: {e}")
-            return RedirectResponse('http://localhost:3000?error=invalid_token', status_code=status.HTTP_302_FOUND)
+            return RedirectResponse(f"{env.FASTAPI_URL}?error=invalid_token", status_code=status.HTTP_302_FOUND)

@@ -22,8 +22,8 @@ rm -f .venv; \
 uv sync --compile-bytecode --frozen
 
 # Strip uv backend binary of unused symbols
-RUN     find ${UV_CACHE_DIR}/bin -type f -exec strip --strip-unneeded {} \;
-RUN     find /var/backend/src/.venv -type f -exec strip --strip-unneeded {} \;
+RUN     find ${UV_CACHE_DIR}/bin -type f -name "*.o" -name "*.so" ! -name "*.*" -exec strip --strip-unneeded {} \;
+RUN     find /var/backend/src/.venv -type f -name "*.o" -name "*.so" ! -name "*.*" -exec strip --strip-unneeded {} \;
 
 ## [Stage 2]: Strip unused dependencies to very barebone uvicorn. ##
 FROM    alpine:3.22.1 AS runtime

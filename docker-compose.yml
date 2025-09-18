@@ -58,10 +58,15 @@ services:
       context: ./backend
     ports:
       - "8000:8000"
-    env_file:
-      - .env
     environment:
-      - DEV=${DEV-}
+      DEV: ${DEV-}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      HOST_URL: ${HOST_URL}
+      FASTAPI_URL: ${FASTAPI_URL}
+      GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID}
+      GOOGLE_OAUTH_CLIENT_SECRETS: ${GOOGLE_OAUTH_CLIENT_SECRETS}
     volumes:
       - ./backend/src:/var/backend/src:rw
       - ./backend/tools:/var/backend/tools:ro
@@ -71,6 +76,8 @@ services:
       - backend_network
     develop:
       watch:
+        - action: rebuild
+          path: .env
         - action: rebuild
           path: backend/Dockerfile
         - action: rebuild
