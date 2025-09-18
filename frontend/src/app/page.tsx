@@ -3,6 +3,7 @@
 import { Button } from '../components/Button'
 
 import React from 'react'
+import Router from 'next/router'
 
 import { 
   Image, 
@@ -21,7 +22,7 @@ import {
 } from "lucide-react";
 
 function on_signin() {
-    window.location.href = 'http://localhost:3000/login'
+    Router.push('/login')
 }
 
 function on_register() {

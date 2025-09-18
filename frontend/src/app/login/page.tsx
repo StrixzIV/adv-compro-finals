@@ -1,6 +1,8 @@
 'use client';
 
 import { useState } from "react";
+import Link from 'next/link'
+
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/Card";
 import { Input } from "../../components/Input";
 import { Button } from "../../components/Button";
@@ -146,9 +148,11 @@ export function LoginPage() {
                     </div>
 
                     <div className="flex justify-center"> 
-                        <Button variant="link" className="p-0 h-auto">
-                            No account?
-                        </Button>
+                        <Link href="/register">
+                            <Button variant="link" className="p-0 h-auto">
+                                No account?
+                            </Button>
+                        </Link>
                     </div>
 
                     <div className="flex justify-center"> 
@@ -158,9 +162,11 @@ export function LoginPage() {
                     </div>
 
                     <div className="flex justify-center"> 
-                        <Button variant="link" className="p-0 h-auto" onClick={() => {window.location.href = "http://localhost:3000"}}>
-                            Return to landing page
-                        </Button>
+                        <Link href="/">
+                            <Button variant="link" className="p-0 h-auto" onClick={() => {window.location.href = "http://localhost:3000"}}>
+                                Return to landing page
+                            </Button>
+                        </Link>
                     </div>
 
                 </form>
