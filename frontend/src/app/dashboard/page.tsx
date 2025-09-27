@@ -1,44 +1,108 @@
-import React from 'react';
-import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
+"use client";
+import React, { useEffect, useState } from "react";
+import { API_BASE } from "@/lib/api";
+import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, BarChart, Bar, PieChart, Pie, Cell } from "recharts";
 
-interface UserLineData {
-  name: string;
-  thisYear: number;
-  lastYear: number;
-}
+type Stats = {
+  totals: { photos: number; videos: number; users: number; requests: number };
+  series: { users: number[]; traffic: number[]; storage: { videos: number; photos: number; free: number } };
+};
 
-const Dashboard: React.FC = () => {
-  const usersLine: UserLineData[] = [
-    { name: "Jan", thisYear: 12, lastYear: 6 },
-    { name: "Feb", thisYear: 8, lastYear: 12 },
-    { name: "Mar", thisYear: 13, lastYear: 9 },
-    { name: "Apr", thisYear: 22, lastYear: 8 },
-    { name: "May", thisYear: 25, lastYear: 14 },
-    { name: "Jun", thisYear: 19, lastYear: 18 },
-    { name: "Jul", thisYear: 21, lastYear: 26 },
+export default function DashboardPage() {
+  const [stats, setStats] = useState<Stats | null>(null);
+  useEffect(() => {
+    fetch(`${API_BASE}/stats/`).then(r => r.json()).then(setStats).catch(e => console.error(e));
+  }, []);
+
+  if (!stats) return <div className="text-neutral-500">Loading…</div>;
+
+  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul"];
+  const usersData = stats.series.users.map((v, i) => ({ name: months[i], value: v }));
+  const trafficDays = ["9 Sep","10 Sep","11 Sep","12 Sep","13 Sep","14 Sep"];
+  const trafficData = stats.series.traffic.map((v, i) => ({ day: trafficDays[i], value: v }));
+  const storageData = [
+    { name: "Videos", value: stats.series.storage.videos },
+    { name: "Photos", value: stats.series.storage.photos },
+    { name: "Free", value: stats.series.storage.free },
   ];
 
   return (
-    <div>
-      <h1>Dashboard</h1>
-      <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={usersLine}>
-          <defs>
-            <linearGradient id="c1" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="#111827" stopOpacity={0.15} />
-              <stop offset="95%" stopColor="#111827" stopOpacity={0} />
-            </linearGradient>
-          </defs>
-          <CartesianGrid stroke="#F3F4F6" vertical={false} />
-          <XAxis dataKey="name" />
-          <YAxis />
-          <Tooltip />
-          <Area type="monotone" dataKey="thisYear" stroke="#111827" fill="url(#c1)" />
-          <Area type="monotone" dataKey="lastYear" stroke="#D1D5DB" fill="url(#c1)" />
-        </AreaChart>
-      </ResponsiveContainer>
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <StatCard label="Total photos" value={stats.totals.photos.toLocaleString()} />
+        <StatCard label="Total videos" value={stats.totals.videos.toLocaleString()} />
+        <StatCard label="Requests (Last 1 hour)" value={stats.totals.requests.toLocaleString()} />
+        <StatCard label="Total Users" value={stats.totals.users.toLocaleString()} />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="card p-4 col-span-2">
+          <div className="flex items-center justify-between">
+            <h3 className="font-medium">Total Users</h3>
+            <div className="text-sm text-neutral-400">This year · Last year</div>
+          </div>
+          <div className="h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={usersData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="name" />
+                <YAxis />
+                <Tooltip />
+                <Line type="monotone" dataKey="value" />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div className="card p-4">
+          <h3 className="font-medium mb-2">Traffic by Website</h3>
+          <div className="text-sm text-neutral-500 space-y-2">
+            {"Google, YouTube, Instagram, Pinterest, Facebook, Twitter".split(", ").map((n) => (
+              <div key={n} className="flex items-center justify-between"><span>{n}</span><span className="text-neutral-400">───</span></div>
+            ))}
+          </div>
+        </div>
+
+        <div className="card p-4">
+          <h3 className="font-medium mb-2">Traffic</h3>
+          <div className="h-56">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={trafficData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="day" />
+                <YAxis />
+                <Tooltip />
+                <Bar dataKey="value" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div className="card p-4">
+          <h3 className="font-medium mb-2">Storage Distribution</h3>
+          <div className="h-56">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie dataKey="value" data={storageData} outerRadius={100} label>
+                  {storageData.map((_, idx) => (<Cell key={idx} />))}
+                </Pie>
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+          <ul className="text-sm text-neutral-500 mt-2 space-y-1">
+            {storageData.map(s => (<li key={s.name}>{s.name}: {s.value}%</li>))}
+          </ul>
+        </div>
+      </div>
     </div>
   );
-};
+}
 
-export default Dashboard;
+function StatCard({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="card p-4">
+      <div className="text-sm text-neutral-500">{label}</div>
+      <div className="text-3xl font-semibold mt-1">{value}</div>
+    </div>
+  );
+}
