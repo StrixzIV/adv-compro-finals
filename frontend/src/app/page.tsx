@@ -3,13 +3,14 @@
 import { Button } from '../components/Button'
 
 import React from 'react'
+import Link from 'next/link'
 
-import { 
-  Image, 
-  Shield, 
-  Zap, 
-  BarChart3, 
-  Users, 
+import {
+  Image,
+  Shield,
+  Zap,
+  BarChart3,
+  Users,
   Cloud,
   Upload,
   Search,
@@ -20,14 +21,6 @@ import {
   Play
 } from "lucide-react";
 
-function on_signin() {
-    window.location.href = 'http://localhost:3000/login'
-}
-
-function on_register() {
-
-}
-
 export default function App() {
 
    return (
@@ -35,39 +28,40 @@ export default function App() {
     <div>
 
         <nav className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50">
+            
             <div className="container mx-auto px-4 sm:px-6 lg:px-8">
+
                 <div className="flex justify-between items-center h-16">
+                
                 <div className="flex items-center gap-2">
                     <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
                     <Image className="w-5 h-5 text-primary-foreground" />
                     </div>
                     <span className="font-semibold text-xl">Memo</span>
                 </div>
-                
-                <div className="hidden md:flex items-center space-x-8">
-                    <a href="#features" className="text-muted-foreground hover:text-foreground transition-colors">Features</a>
-                    <a href="#pricing" className="text-muted-foreground hover:text-foreground transition-colors">Pricing</a>
-                    <a href="#about" className="text-muted-foreground hover:text-foreground transition-colors">About</a>
-                    <a href="#contact" className="text-muted-foreground hover:text-foreground transition-colors">Contact</a>
-                </div>
 
                 <div className="flex items-center gap-4">
                     
-                    <Button variant="ghost" onClick={on_signin}>
-                        Sign In
-                    </Button>
+                    <Link href="/login">
+                        <Button variant="ghost">
+                            Sign In
+                        </Button>
+                    </Link>
 
-                    <Button onClick={on_register}>
-                        Get Started
-                    </Button>
+                    <Link href="/register">
+                        <Button>
+                            Get Started
+                        </Button>
+                    </Link>
                 
                 </div>
                 </div>
             </div>
         </nav>
 
-        <section className="relative overflow-hidden">
-            <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-24 lg:py-32">
+        {/* Updated section with flex and min-h-screen to center content vertically */}
+        <section className="relative overflow-hidden flex items-center min-h-screen">
+            <div className="container mx-auto px-4 sm:px-6 lg:px-8">
                 <div className="grid lg:grid-cols-2 gap-12 items-center">
 
                     <div className="space-y-8">
@@ -84,10 +78,12 @@ export default function App() {
                         </div>
                         
                         <div className="flex flex-col sm:flex-row gap-4">
-                            <Button size="lg" onClick={on_register} className="gap-2">
-                                Try it for free
-                                <ChevronRight className="w-4 h-4" />
-                            </Button>
+                            <Link href="/register">
+                                <Button size="lg" className="gap-2">
+                                    Try it for free
+                                    <ChevronRight className="w-4 h-4" />
+                                </Button>
+                            </Link>
                         </div>
                     </div>
 
