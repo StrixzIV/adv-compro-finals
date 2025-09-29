@@ -1,12 +1,15 @@
 import jwt
 import uuid
 import aiohttp
+from datetime import timedelta
 
 from db import database
 from lib.environ import env, env_single_use
 
 from fastapi import APIRouter, status, Request
 from fastapi.responses import RedirectResponse, Response
+
+from routes.auth import create_access_token
 
 oauth_route = APIRouter(prefix = '/oauth')
 client_secret = env_single_use("GOOGLE_OAUTH_CLIENT_SECRETS")
@@ -51,18 +54,18 @@ async def oauth_callback(request: Request):
 
                 if resp.status != 200:
                     print(f"Error exchanging token: {await resp.text()}")
-                    return RedirectResponse(f"{env.HOST_URL}?error=token_exchange_failed", status_code=status.HTTP_302_FOUND)
+                    return RedirectResponse(f"{env.HOST_URL}/login?error=token_exchange_failed", status_code=status.HTTP_302_FOUND)
 
                 token_data = await resp.json()
 
         except aiohttp.ClientError as e:
             print(f"Network error during token exchange: {e}")
-            return RedirectResponse(f"{env.HOST_URL}?error=network_error", status_code=status.HTTP_302_FOUND)
+            return RedirectResponse(f"{env.HOST_URL}/login?error=network_error", status_code=status.HTTP_302_FOUND)
 
         id_token = token_data.get('id_token')
         
         if not id_token:
-            return RedirectResponse(f"{env.HOST_URL}?error=no_id_token", status_code=status.HTTP_302_FOUND)
+            return RedirectResponse(f"{env.HOST_URL}/login?error=no_id_token", status_code=status.HTTP_302_FOUND)
 
         try:
 
@@ -72,26 +75,44 @@ async def oauth_callback(request: Request):
             email = user_info.get('email')
             username = user_info.get('name')
 
-            # Check if a user with this google_id already exists in the database
+            user_id = None
+
             query = "SELECT id FROM users WHERE google_id = :google_id"
             existing_user = await database.fetch_one(query=query, values={"google_id": google_id})
 
             if not existing_user:
-                # If the user does not exist, create a new record
+
                 query = """
                     INSERT INTO users (google_id, email, username)
                     VALUES (:google_id, :email, :username)
+                    RETURNING id; -- Added RETURNING id to get the new user's ID
                 """
+
                 values = {
                     "google_id": google_id,
                     "email": email,
                     "username": username,
                 }
-                await database.execute(query=query, values=values)
-            
-            redirect_url = f"{env.HOST_URL}/?email={email}&name={username}"
-            return RedirectResponse(redirect_url, status_code=status.HTTP_302_FOUND)
 
+                new_user_id_result = await database.fetch_one(query=query, values=values)
+                user_id = new_user_id_result['id'] if new_user_id_result else None
+                
+            else:
+                user_id = existing_user['id']
+
+            if not user_id:
+                return RedirectResponse(f"{env.HOST_URL}/login?error=user_id_error", status_code=status.HTTP_302_FOUND)
+
+            access_token_expires = timedelta(minutes=30)
+            access_token = create_access_token(
+                data={"sub": str(user_id)}, 
+                expires_delta=access_token_expires
+            )
+
+            redirect_url = f"{env.HOST_URL}/gallery#/auth_success?token={access_token}&token_type=bearer"
+
+            return RedirectResponse(redirect_url, status_code=status.HTTP_302_FOUND)
+        
         except jwt.exceptions.DecodeError as e:
             print(f"Error decoding JWT token: {e}")
-            return RedirectResponse(f"{env.HOST_URL}?error=invalid_token", status_code=status.HTTP_302_FOUND)
+            return RedirectResponse(f"{env.HOST_URL}/login?error=invalid_token", status_code=status.HTTP_302_FOUND)
