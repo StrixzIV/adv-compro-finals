@@ -1,6 +1,8 @@
 'use client';
 
 import { useState } from "react";
+import { useRouter } from 'next/navigation'
+
 import Link from 'next/link'
 
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/Card";
@@ -8,25 +10,68 @@ import { Input } from "../../components/Input";
 import { Button } from "../../components/Button";
 import { Label } from "../../components/Label";
 import { Separator } from "../../components/Separator";
-import { Alert, AlertDescription } from "../../components/Alert";
+import { Alert, AlertDescription, AlertTitle } from "../../components/Alert";
 import { Eye, EyeOff, Image, AlertCircle } from "lucide-react";
 
+const FASTAPI_URL = "http://localhost:8000"
+
 export function LoginPage() {
+
+    const router = useRouter();
 
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [showPassword, setShowPassword] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
 
     const handleSubmit = async (e: React.FormEvent) => {
+
         e.preventDefault();
+        setError(null);
         setIsLoading(true);
+
+        try {
+
+            const formData = new FormData();
+
+            formData.append('username', email); 
+            formData.append('password', password);
+
+            const response = await fetch(`${FASTAPI_URL}/auth/v1/auth/login`, {
+                method: 'POST',
+                body: formData,
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                const errorMessage = data.detail || "Login failed due to server error.";
+                setError(errorMessage);
+                return;
+            }
+
+            const token = data.access_token;
+            if (token) {
+                localStorage.setItem('accessToken', token);
+                router.push('/gallery'); 
+            }
+            
+            else {
+                setError("Login successful, but no access token was returned.");
+            }
+            
+        } 
         
-        // Simulate API call delay
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        catch (err) {
+            console.error("Login request failed:", err);
+            setError("Could not connect to the server. Please check your network.");
+        }
         
-        // onLogin(email, password);
-        setIsLoading(false);
+        finally {
+            setIsLoading(false);
+        }
+
     };
 
     return (
@@ -63,6 +108,15 @@ export function LoginPage() {
                 <CardTitle className="text-center">Login</CardTitle>
                 </CardHeader>
                 <CardContent>
+
+                {error && (
+                    <Alert variant="destructive" className="mb-4">
+                        <AlertCircle className="h-4 w-4" />
+                        <AlertTitle>Login Error</AlertTitle>
+                        <AlertDescription>{error}</AlertDescription>
+                    </Alert>
+                )}
+
                 <form onSubmit={handleSubmit} className="space-y-4">
                     <div className="space-y-2">
                     <Label htmlFor="email">Email</Label>

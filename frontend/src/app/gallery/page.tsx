@@ -1,6 +1,9 @@
 "use client";
 
 import React from "react";
+import { useState, useEffect } from "react";
+import { useRouter } from 'next/navigation'
+
 import {
   Cloud,
   Images,
@@ -15,6 +18,7 @@ import {
   X,
   Eye,
   Undo2,
+  LogOut
 } from "lucide-react";
 import { motion } from "framer-motion";
 import {
@@ -248,7 +252,7 @@ function PreviewModal({
   photo: Photo | undefined;
   onClose: () => void;
 }) {
-  React.useEffect(() => {
+  useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") onClose();
     }
@@ -279,9 +283,9 @@ function PreviewModal({
 }
 
 export default function PhotoCloud() {
-  const [view, setView] = React.useState<ViewType>("photos");
-  const [items, setItems] = React.useState(() => photos.map((p) => ({ ...p, favorite: !!p.favorite, trashed: !!p.trashed })));
-  const [previewId, setPreviewId] = React.useState<number | null>(null);
+  const [view, setView] = useState<ViewType>("photos");
+  const [items, setItems] = useState(() => photos.map((p) => ({ ...p, favorite: !!p.favorite, trashed: !!p.trashed })));
+  const [previewId, setPreviewId] = useState<number | null>(null);
 
   // ---------------- Dashboard demo data (edit freely) ----------------
   const stats = {
@@ -354,6 +358,61 @@ export default function PhotoCloud() {
   const toggleFavorite = (id: number) => setItems((prev) => prev.map((p) => (p.id === id ? { ...p, favorite: !p.favorite } : p)));
   const moveToTrash = (id: number) => setItems((prev) => prev.map((p) => (p.id === id ? { ...p, trashed: true, favorite: false } : p)));
   const restoreFromTrash = (id: number) => setItems((prev) => prev.map((p) => (p.id === id ? { ...p, trashed: false } : p)));
+
+  const router = useRouter();
+
+  const [isLoading, setIsLoading] = useState(true);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+
+  const handleLogout = () => {
+    localStorage.removeItem('accessToken');
+    setIsAuthenticated(false);
+    router.push('/login');
+  };
+
+  useEffect(() => {
+
+    const hash = window.location.hash;
+
+    if (hash.startsWith('#/auth_success')) {
+      
+      const params = new URLSearchParams(hash.substring('#/auth_success?'.length));
+      const token = params.get('token');
+      const tokenType = params.get('token_type');
+      
+      if (token && tokenType === 'bearer') {
+        localStorage.setItem('accessToken', token);
+        setIsAuthenticated(true);
+
+        if (window.history.replaceState) {
+          window.history.replaceState(null, '', window.location.pathname);
+        }
+        
+        else {
+          window.location.hash = '';
+        }
+
+      }
+    }
+    
+    else {
+      const storedToken = localStorage.getItem('accessToken');
+      if (storedToken) {
+        setIsAuthenticated(true);
+      }
+    }
+
+    setIsLoading(false);
+    
+  }, []);
+
+  if (isLoading) {
+      return <div className="p-10 text-center">Loading...</div>;
+  }
+
+  if (!isAuthenticated) {
+    router.push('/login')
+  }
 
   function renderContent() {
     switch (view) {
@@ -550,7 +609,15 @@ export default function PhotoCloud() {
           </nav>
 
           <div className="mt-auto space-y-2">
+            
             <SidebarLink icon={Settings} label="Settings" active={view === "settings"} onClick={() => setView("settings")} />
+            
+            <SidebarLink 
+                icon={LogOut} 
+                label="Logout" 
+                onClick={handleLogout} 
+            />
+            
             <div className="flex items-center gap-3 rounded-xl px-3 py-2">
               <div className="grid h-9 w-9 place-items-center rounded-full bg-gray-100 text-xs font-semibold">CT</div>
               <div className="min-w-0">
