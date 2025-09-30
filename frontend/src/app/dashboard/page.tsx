@@ -1,6 +1,20 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import {
+  Images,
+  Upload as UploadIcon,
+  Album,
+  Heart,
+  Trash2,
+  LayoutDashboard,
+  Settings,
+  Search as SearchIcon,
+  Filter,
+} from "lucide-react";
+import { motion } from "framer-motion";
 import {
   ResponsiveContainer,
   AreaChart,
@@ -29,15 +43,7 @@ type Photo = {
   trashed?: boolean;
 };
 
-// --- Helpers ---
-const formatMB = (mb: number) => `${mb.toFixed(1)} MB`;
-const parseMB = (s?: string) => {
-  if (!s) return 0;
-  const num = parseFloat(s.replace(/[^0-9.]/g, ""));
-  return isFinite(num) ? num : 0;
-};
-
-// --- Fallback mock data (keeps the dashboard useful even if API is missing) ---
+// --- Fallback mock data ---
 const fallbackPhotos: Photo[] = [
   {
     id: 1,
@@ -54,34 +60,7 @@ const fallbackPhotos: Photo[] = [
     size: "3.8 MB",
     src: "https://images.unsplash.com/photo-1467269204594-9661b134dd2b?q=80&w=1200&auto=format&fit=crop",
   },
-  {
-    id: 3,
-    title: "Portrait Session",
-    date: "2025-09-08",
-    size: "5.1 MB",
-    src: "https://images.unsplash.com/photo-1507120410856-1f35574c3b45?q=80&w=1200&auto=format&fit=crop",
-  },
-  {
-    id: 4,
-    title: "Food Photography",
-    date: "2025-09-07",
-    size: "2.9 MB",
-    src: "https://images.unsplash.com/photo-1504754524776-8f4f37790ca0?q=80&w=1200&auto=format&fit=crop",
-  },
-  {
-    id: 5,
-    title: "Sunset Travel",
-    date: "2025-09-06",
-    size: "3.2 MB",
-    src: "https://images.unsplash.com/photo-1501973801540-537f08ccae7b?q=80&w=1200&auto=format&fit=crop",
-  },
-  {
-    id: 6,
-    title: "Abstract Art",
-    date: "2025-09-05",
-    size: "4.7 MB",
-    src: "https://images.unsplash.com/photo-1504198453319-5ce911bafcde?q=80&w=1200&auto=format&fit=crop",
-  },
+  // more mock data...
 ];
 
 export default function DashboardPage() {
@@ -137,11 +116,11 @@ export default function DashboardPage() {
     };
   }, [photos]);
 
-  // Fake “storage distribution” just to make the pie chart nice
+  // --- Fallback storage pie ---
   const storagePie = useMemo(() => {
     const photosMB = totals.totalMB;
-    const videosMB = photosMB * 1.8; // pretend videos > photos
-    const freeMB = Math.max(0, 1024 - (photosMB + videosMB)); // pretend 1GB plan
+    const videosMB = photosMB * 1.8;
+    const freeMB = Math.max(0, 1024 - (photosMB + videosMB)); 
 
     return [
       { name: "Videos", value: videosMB },
@@ -150,10 +129,37 @@ export default function DashboardPage() {
     ];
   }, [totals.totalMB]);
 
+  // Sidebar navigation
+  const SidebarLink = ({ icon: Icon, label, href }: { icon: React.ElementType, label: string, href: string }) => {
+    const pathname = usePathname();
+    const active = pathname === href || (href !== "/" && pathname.startsWith(href + "/"));
+    return (
+      <Link href={href} className={`flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm transition ${active ? "bg-gray-900/5 text-gray-900 shadow-sm" : "text-gray-600 hover:bg-gray-900/5 hover:text-gray-900"}`}>
+        <Icon size={18} />
+        <span>{label}</span>
+      </Link>
+    );
+  };
+
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
-      <div className="mx-auto max-w-6xl">
-        <header className="mb-6 flex items-center justify-between">
+    <div className="flex min-h-screen bg-gray-50">
+      {/* Sidebar */}
+      <aside className="w-64 border-r border-gray-200 bg-white p-4">
+        <div className="mb-6 text-lg font-semibold">PhotoCloud</div>
+        <div className="flex flex-col gap-2">
+          <SidebarLink icon={Images} label="Photos" href="/photos" />
+          <SidebarLink icon={UploadIcon} label="Upload" href="/upload" />
+          <SidebarLink icon={Album} label="Albums" href="/albums" />
+          <SidebarLink icon={Heart} label="Favorites" href="/favorites" />
+          <SidebarLink icon={Trash2} label="Trash" href="/trash" />
+          <SidebarLink icon={LayoutDashboard} label="Dashboard" href="/dashboard" />
+          <SidebarLink icon={Settings} label="Settings" href="/settings" />
+        </div>
+      </aside>
+
+      {/* Main content */}
+      <main className="flex-1 p-8">
+        <header className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <h1 className="text-2xl font-bold">Dashboard</h1>
         </header>
 
@@ -218,32 +224,7 @@ export default function DashboardPage() {
             </ResponsiveContainer>
           </div>
         </section>
-
-        {/* Traffic stub (optional sample bar chart) */}
-        <section className="mt-6 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-200">
-          <h2 className="mb-4 text-lg font-semibold">Weekly traffic (sample)</h2>
-          <ResponsiveContainer width="100%" height={260}>
-            <BarChart
-              data={[
-                { day: "Mon", value: 12 },
-                { day: "Tue", value: 18 },
-                { day: "Wed", value: 9 },
-                { day: "Thu", value: 22 },
-                { day: "Fri", value: 15 },
-                { day: "Sat", value: 8 },
-                { day: "Sun", value: 11 },
-              ]}
-            >
-              <CartesianGrid strokeDasharray="5 5" />
-              <XAxis dataKey="day" />
-              <YAxis allowDecimals={false} />
-              <Tooltip />
-              <Legend />
-              <Bar dataKey="value" />
-            </BarChart>
-          </ResponsiveContainer>
-        </section>
-      </div>
+      </main>
     </div>
   );
 }
