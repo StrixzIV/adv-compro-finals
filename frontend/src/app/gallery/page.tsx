@@ -1,31 +1,28 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import {
-  Cloud,
   Images,
-  Upload,
+  Upload as UploadIcon,
   Album,
   Heart,
   Trash2,
   LayoutDashboard,
   Settings,
-  Search,
+  Search as SearchIcon,
   Filter,
-  X,
   Eye,
   Undo2,
+  X,
+  Download,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import {
   ResponsiveContainer,
   AreaChart,
   Area,
-  BarChart,
-  Bar,
-  PieChart,
-  Pie,
-  Cell,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -33,7 +30,50 @@ import {
   Legend,
 } from "recharts";
 
-const photos = [
+// -------------------- Types --------------------
+
+type Photo = {
+  id: number;
+  title: string;
+  date: string; // YYYY-MM-DD
+  size: string; // e.g., "4.2 MB"
+  src: string;
+  preview?: boolean;
+  favorite?: boolean;
+  trashed?: boolean;
+};
+
+type ViewType =
+  | "photos"
+  | "upload"
+  | "albums"
+  | "favorites"
+  | "trash"
+  | "dashboard"
+  | "settings";
+
+/** Backend may return extra fields like { url } or { path } */
+type ApiCreated = Partial<Photo> & {
+  url?: string;
+  path?: string;
+  image_url?: string;
+};
+
+// -------------------- Utilities --------------------
+
+function formatBytesToMB(bytes: number) {
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+function todayStr() {
+  const d = new Date();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${mm}-${dd}`;
+}
+
+// -------------------- Mock data (fallback) --------------------
+
+const fallbackPhotos: Photo[] = [
   {
     id: 1,
     title: "Mountain Landscape",
@@ -41,7 +81,6 @@ const photos = [
     size: "4.2 MB",
     src: "https://images.unsplash.com/photo-1501785888041-af3ef285b470?q=80&w=1200&auto=format&fit=crop",
     preview: true,
-    trashed: false,
   },
   {
     id: 2,
@@ -49,53 +88,50 @@ const photos = [
     date: "2025-09-09",
     size: "3.8 MB",
     src: "https://images.unsplash.com/photo-1467269204594-9661b134dd2b?q=80&w=1200&auto=format&fit=crop",
-    preview: true,
-    favorite: true,
-    trashed: false,
   },
   {
     id: 3,
     title: "Portrait Session",
     date: "2025-09-08",
     size: "5.1 MB",
-    src: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?q=80&w=1200&auto=format&fit=crop&sat=-100",
-    favorite: true,
-    trashed: false,
+    src: "https://images.unsplash.com/photo-1507120410856-1f35574c3b45?q=80&w=1200&auto=format&fit=crop",
   },
   {
     id: 4,
     title: "Food Photography",
     date: "2025-09-07",
     size: "2.9 MB",
-    src: "https://images.unsplash.com/photo-1504674900247-0877df9cc836?q=80&w=1200&auto=format&fit=crop",
-    trashed: false,
+    src: "https://images.unsplash.com/photo-1504754524776-8f4f37790ca0?q=80&w=1200&auto=format&fit=crop",
   },
   {
     id: 5,
     title: "Sunset Travel",
     date: "2025-09-06",
     size: "3.2 MB",
-    src: "https://images.unsplash.com/photo-1497215728101-495cad6e0772?q=80&w=1200&auto=format&fit=crop",
-    trashed: false,
+    src: "https://images.unsplash.com/photo-1501973801540-537f08ccae7b?q=80&w=1200&auto=format&fit=crop",
   },
   {
     id: 6,
     title: "Abstract Art",
     date: "2025-09-05",
     size: "4.7 MB",
-    src: "https://images.unsplash.com/photo-1504199367641-aba8151af406?q=80&w=1200&auto=format&fit=crop",
-    trashed: false,
+    src: "https://images.unsplash.com/photo-1504198453319-5ce911bafcde?q=80&w=1200&auto=format&fit=crop",
   },
 ];
 
-type SidebarLinkProps = {
-  icon: React.ComponentType<{ size?: number }>;
+// -------------------- Small UI atoms --------------------
+
+function SidebarLink({
+  icon: Icon,
+  label,
+  active = false,
+  onClick,
+}: {
+  icon: React.ElementType;
   label: string;
   active?: boolean;
   onClick?: () => void;
-};
-
-function SidebarLink({ icon: Icon, label, active = false, onClick }: SidebarLinkProps) {
+}) {
   return (
     <button
       onClick={onClick}
@@ -111,27 +147,51 @@ function SidebarLink({ icon: Icon, label, active = false, onClick }: SidebarLink
   );
 }
 
-type Photo = {
-  id: number;
-  title: string;
-  date: string;
-  size: string;
-  src: string;
-  preview?: boolean;
-  favorite?: boolean;
-  trashed?: boolean;
-};
+/** Next.js-aware nav link for real routes (Dashboard) */
+function SidebarNavLink({
+  icon: Icon,
+  label,
+  href,
+}: {
+  icon: React.ElementType;
+  label: string;
+  href: string;
+}) {
+  const pathname = usePathname();
+  const active =
+    pathname === href ||
+    (href !== "/" && pathname.startsWith(href + "/"));
 
-type PhotoCardProps = {
+  return (
+    <Link
+      href={href}
+      className={`flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm transition ${
+        active
+          ? "bg-gray-900/5 text-gray-900 shadow-sm"
+          : "text-gray-600 hover:bg-gray-900/5 hover:text-gray-900"
+      }`}
+    >
+      <Icon size={18} />
+      <span>{label}</span>
+    </Link>
+  );
+}
+
+function PhotoCard({
+  p,
+  mode = "photos",
+  onPreview,
+  onToggleFavorite,
+  onTrash,
+  onRestore,
+}: {
   p: Photo;
   mode?: "photos" | "favorites" | "trash";
   onPreview?: (id: number) => void;
   onToggleFavorite?: (id: number) => void;
   onTrash?: (id: number) => void;
   onRestore?: (id: number) => void;
-};
-
-function PhotoCard({ p, mode = "photos", onPreview, onToggleFavorite, onTrash, onRestore }: PhotoCardProps) {
+}) {
   return (
     <motion.div
       whileHover={{ y: -2 }}
@@ -144,14 +204,17 @@ function PhotoCard({ p, mode = "photos", onPreview, onToggleFavorite, onTrash, o
       }}
     >
       <div className="relative aspect-[4/3] w-full">
-        <img src={p.src} alt={p.title} className="h-full w-full object-cover" loading="lazy" />
+        <img
+          src={p.src}
+          alt={p.title}
+          className="h-full w-full object-cover"
+          loading="lazy"
+        />
 
-        {/* file size badge */}
         <div className="absolute right-2 top-2 rounded-full bg-black/60 px-2 py-1 text-[11px] font-medium text-white backdrop-blur">
           {p.size}
         </div>
 
-        {/* preview overlay */}
         <div
           className={`pointer-events-none absolute inset-0 grid place-items-center transition ${
             p.preview ? "opacity-100" : "opacity-0 group-hover:opacity-100"
@@ -162,7 +225,6 @@ function PhotoCard({ p, mode = "photos", onPreview, onToggleFavorite, onTrash, o
           </span>
         </div>
 
-        {/* action buttons */}
         <div className="absolute bottom-2 right-2 flex items-center gap-2 opacity-0 transition group-hover:opacity-100">
           {(mode === "photos" || mode === "favorites") && (
             <button
@@ -215,118 +277,169 @@ function PhotoCard({ p, mode = "photos", onPreview, onToggleFavorite, onTrash, o
   );
 }
 
-function UploadPanel() {
-  return (
-    <div className="rounded-2xl border border-dashed border-gray-300 bg-white p-10 text-center shadow-sm">
-      <div className="mx-auto mb-4 grid h-12 w-12 place-items-center rounded-full bg-gray-100">
-        <Upload size={20} />
-      </div>
-      <p className="text-sm text-gray-700">Drag & drop photos here, or</p>
-      <div className="mt-3">
-        <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800">
-          <input type="file" multiple className="hidden" />
-          Choose files
-        </label>
-      </div>
-    </div>
-  );
-}
-
-function EmptyState({ title, subtitle }: { title: string; subtitle: string }) {
-  return (
-    <div className="grid place-items-center rounded-2xl border border-gray-200 bg-white p-12 text-center text-gray-600 shadow-sm">
-      <div className="mb-2 text-sm font-medium">{title}</div>
-      <div className="text-xs text-gray-500">{subtitle}</div>
-    </div>
-  );
-}
+// -------------------- Preview Modal --------------------
 
 function PreviewModal({
   photo,
+  meta,
   onClose,
+  onToggleFavorite,
+  onTrash,
+  onRestore,
+  inTrash,
 }: {
-  photo: Photo | undefined;
+  photo: Photo;
+  meta: { width: number; height: number } | null;
   onClose: () => void;
+  onToggleFavorite: (id: number) => void;
+  onTrash: (id: number) => void;
+  onRestore: (id: number) => void;
+  inTrash: boolean;
 }) {
-  React.useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose();
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
-  if (!photo) return null;
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={onClose}>
-      <div className="relative max-w-5xl" onClick={(e) => e.stopPropagation()}>
-        <button
-          className="absolute -right-3 -top-3 grid h-9 w-9 place-items-center rounded-full bg-white/90 text-gray-700 shadow-lg ring-1 ring-gray-200 hover:bg-white"
-          onClick={onClose}
-          aria-label="Close preview"
-        >
-          <X size={18} />
-        </button>
-        <img src={photo.src} alt={photo.title} className="max-h-[80vh] w-full rounded-xl object-contain shadow-2xl" />
-        <div className="mt-3 rounded-xl bg-white/95 p-4 shadow-sm">
-          <div className="text-sm font-medium text-gray-900">{photo.title}</div>
-          <div className="text-xs text-gray-500">{photo.date} · {photo.size}</div>
+    <div
+      className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4"
+      role="dialog"
+      aria-modal
+      onClick={onClose}
+    >
+      <div
+        className="relative grid w-full max-w-5xl grid-cols-1 overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-black/5 md:grid-cols-2"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Image */}
+        <div className="relative bg-black/5">
+          <img src={photo.src} alt={photo.title} className="h-full w-full object-contain" />
+          <a
+            href={photo.src}
+            download
+            className="absolute bottom-3 left-3 inline-flex items-center gap-2 rounded-full bg-white/90 px-3 py-1.5 text-sm shadow ring-1 ring-gray-200 hover:bg-white"
+          >
+            <Download size={16} /> Download
+          </a>
+        </div>
+
+        {/* Details */}
+        <div className="flex flex-col gap-4 p-6">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h3 className="text-base font-semibold text-gray-900">{photo.title}</h3>
+              <p className="text-xs text-gray-500">{photo.date}</p>
+            </div>
+            <button
+              onClick={onClose}
+              aria-label="Close"
+              className="rounded-full bg-gray-100 p-2 text-gray-700 hover:bg-gray-200"
+            >
+              <X size={16} />
+            </button>
+          </div>
+
+          <dl className="grid grid-cols-2 gap-3 text-sm">
+            <div>
+              <dt className="text-gray-500">Size</dt>
+              <dd className="font-medium text-gray-900">{photo.size || "—"}</dd>
+            </div>
+            <div>
+              <dt className="text-gray-500">Dimensions</dt>
+              <dd className="font-medium text-gray-900">
+                {meta ? `${meta.width} × ${meta.height}px` : "—"}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-gray-500">File type</dt>
+              <dd className="font-medium text-gray-900">
+                {(() => {
+                  const m = photo.src.split("?")[0].split(".");
+                  return m.length > 1 ? m[m.length - 1].toUpperCase() : "JPEG";
+                })()}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-gray-500">ID</dt>
+              <dd className="font-medium text-gray-900">{photo.id}</dd>
+            </div>
+          </dl>
+
+          <div className="mt-auto flex items-center gap-2">
+            <button
+              onClick={() => onToggleFavorite(photo.id)}
+              className={`rounded-lg px-3 py-2 text-sm shadow-sm ring-1 ring-gray-200 ${
+                photo.favorite ? "bg-red-50 text-red-600" : "bg-white text-gray-800"
+              }`}
+            >
+              {photo.favorite ? "Unfavorite" : "Add to Favorites"}
+            </button>
+            {!inTrash ? (
+              <button
+                onClick={() => onTrash(photo.id)}
+                className="rounded-lg bg-white px-3 py-2 text-sm text-gray-800 shadow-sm ring-1 ring-gray-200"
+              >
+                Move to Trash
+              </button>
+            ) : (
+              <button
+                onClick={() => onRestore(photo.id)}
+                className="rounded-lg bg-white px-3 py-2 text-sm text-gray-800 shadow-sm ring-1 ring-gray-200"
+              >
+                Restore
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
+// -------------------- Main App --------------------
+
 export default function PhotoCloud() {
-  const [view, setView] = React.useState<ViewType>("photos");
-  const [items, setItems] = React.useState(() => photos.map((p) => ({ ...p, favorite: !!p.favorite, trashed: !!p.trashed })));
-  const [previewId, setPreviewId] = React.useState<number | null>(null);
+  const [view, setView] = useState<ViewType>("photos");
+  const [photos, setPhotos] = useState<Photo[]>([]);
+  const [query, setQuery] = useState("");
+  const [previewId, setPreviewId] = useState<number | null>(null);
+  const [imgMeta, setImgMeta] = useState<{ width: number; height: number } | null>(null);
 
-  // ---------------- Dashboard demo data (edit freely) ----------------
-  const stats = {
-    totalPhotos: items.length + 7240, // demo value to look rich :)
-    totalVideos: 3671,
-    lastHourRequests: 156,
-    totalUsers: 2318,
-  };
+  // Upload form state
+  const [file, setFile] = useState<File | null>(null);
+  const [title, setTitle] = useState<string>("");
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
-  const usersLine = [
-    { name: "Jan", thisYear: 12, lastYear: 6 },
-    { name: "Feb", thisYear: 8, lastYear: 12 },
-    { name: "Mar", thisYear: 13, lastYear: 9 },
-    { name: "Apr", thisYear: 22, lastYear: 8 },
-    { name: "May", thisYear: 25, lastYear: 14 },
-    { name: "Jun", thisYear: 19, lastYear: 18 },
-    { name: "Jul", thisYear: 21, lastYear: 26 },
-  ];
+  // API endpoints
+  const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL;
+  const LIST_PATH = "/photos/";
+  const UPLOAD_PATH = process.env.NEXT_PUBLIC_API_UPLOAD_PATH || "/photos/upload";
 
-  const trafficDaily = [
-    { day: "9 Sep", value: 14 },
-    { day: "10 Sep", value: 30 },
-    { day: "11 Sep", value: 22 },
-    { day: "12 Sep", value: 32 },
-    { day: "13 Sep", value: 12 },
-    { day: "14 Sep", value: 24 },
-  ];
+  // Load from API, otherwise fallback so UI looks like the screenshot
+  useEffect(() => {
+    let abort = false;
+    const load = async () => {
+      try {
+        if (!API_BASE) throw new Error("No API base env");
+        const res = await fetch(`${API_BASE}${LIST_PATH}`, { cache: "no-store" });
+        if (!res.ok) throw new Error("bad status");
+        const data = (await res.json()) as Photo[];
+        if (!abort) setPhotos(Array.isArray(data) ? data : fallbackPhotos);
+      } catch {
+        if (!abort) setPhotos(fallbackPhotos);
+      }
+    };
+    load();
+    return () => {
+      abort = true;
+    };
+  }, [API_BASE]);
 
-  const siteTraffic = [
-    { name: "Google", value: 18 },
-    { name: "YouTube", value: 14 },
-    { name: "Instagram", value: 16 },
-    { name: "Pinterest", value: 28 },
-    { name: "Facebook", value: 12 },
-    { name: "Twitter", value: 15 },
-  ];
+  const toggleFavorite = (id: number) =>
+    setPhotos((prev) => prev.map((p) => (p.id === id ? { ...p, favorite: !p.favorite } : p)));
 
-  const storagePie = [
-    { name: "Videos", value: 52.1 },
-    { name: "Photos", value: 22.8 },
-    { name: "Free space", value: 13.9 },
-  ];
-  const PIE_COLORS = ["#111827", "#60A5FA", "#10B981"]; // gray-900, blue-400, emerald-500
+  const moveToTrash = (id: number) =>
+    setPhotos((prev) => prev.map((p) => (p.id === id ? { ...p, trashed: true, favorite: false } : p)));
 
-  type ViewType = "photos" | "upload" | "albums" | "favorites" | "trash" | "dashboard" | "settings";
+  const restoreFromTrash = (id: number) =>
+    setPhotos((prev) => prev.map((p) => (p.id === id ? { ...p, trashed: false } : p)));
 
   const titleMap: Record<ViewType, string> = {
     photos: "Photos",
@@ -338,264 +451,319 @@ export default function PhotoCloud() {
     settings: "Settings",
   };
 
-  const counts = {
-    total: items.length,
-    favorites: items.filter((p) => p.favorite && !p.trashed).length,
-    trashed: items.filter((p) => p.trashed).length,
+  const visible = useMemo(() => {
+    let list = photos;
+    if (view === "favorites") list = list.filter((p) => p.favorite && !p.trashed);
+    else if (view === "trash") list = list.filter((p) => p.trashed);
+    else list = list.filter((p) => !p.trashed);
+
+    if (query.trim()) {
+      const q = query.toLowerCase();
+      list = list.filter((p) => p.title.toLowerCase().includes(q) || p.date.includes(q));
+    }
+    return list;
+  }, [photos, view, query]);
+
+  const openPreview = (id: number) => setPreviewId(id);
+  const closePreview = () => {
+    setPreviewId(null);
+    setImgMeta(null);
   };
 
-  const visiblePhotos = (() => {
-    if (view === "favorites") return items.filter((p) => p.favorite && !p.trashed);
-    if (view === "trash") return items.filter((p) => p.trashed);
-    return items.filter((p) => !p.trashed);
-  })();
+  // load dimensions when preview opens
+  useEffect(() => {
+    if (previewId == null) return;
+    const p = photos.find((x) => x.id === previewId);
+    if (!p) return;
+    const img = new Image();
+    img.onload = () => setImgMeta({ width: img.naturalWidth, height: img.naturalHeight });
+    img.src = p.src;
+  }, [previewId, photos]);
 
-  // actions
-  const toggleFavorite = (id: number) => setItems((prev) => prev.map((p) => (p.id === id ? { ...p, favorite: !p.favorite } : p)));
-  const moveToTrash = (id: number) => setItems((prev) => prev.map((p) => (p.id === id ? { ...p, trashed: true, favorite: false } : p)));
-  const restoreFromTrash = (id: number) => setItems((prev) => prev.map((p) => (p.id === id ? { ...p, trashed: false } : p)));
+  // -------------------- Upload logic (FIXED) --------------------
+  async function handleUpload(e: React.FormEvent) {
+    e.preventDefault();
+    setUploadError(null);
+    if (!API_BASE) {
+      setUploadError("Missing NEXT_PUBLIC_API_BASE_URL");
+      return;
+    }
+    if (!file) {
+      setUploadError("Please choose an image file.");
+      return;
+    }
+    try {
+      setUploading(true);
+      const form = new FormData();
+      form.append("file", file); // FastAPI alias "file"
+      form.append("title", title || file.name);
+
+      const res = await fetch(`${API_BASE}${UPLOAD_PATH}`, {
+        method: "POST",
+        body: form,
+      });
+
+      if (!res.ok) {
+        const txt = await res.text().catch(() => "");
+        throw new Error(txt || `Upload failed with ${res.status}`);
+      }
+
+      const created = (await res.json()) as ApiCreated;
+
+      // Pick the best available URL-like field safely
+      const srcFromApi =
+        (typeof created.src === "string" && created.src) ||
+        (typeof created.url === "string" && created.url) ||
+        (typeof created.image_url === "string" && created.image_url) ||
+        (typeof created.path === "string" &&
+          (created.path.startsWith("http")
+            ? created.path
+            : `${API_BASE}${created.path}`)) ||
+        "";
+
+      const newPhoto: Photo = {
+        id:
+          typeof created.id === "number"
+            ? created.id
+            : Math.max(0, ...photos.map((p) => p.id)) + 1,
+        title: (created.title as string) ?? (title || file.name),
+        date: (created.date as string) ?? todayStr(),
+        size:
+        (created.size as string) ??
+        (typeof file.size === "number" ? formatBytesToMB(file.size) : "—"),
+        src: srcFromApi,
+        preview: true,
+        favorite: false,
+        trashed: false,
+      };
+
+      if (!newPhoto.src) {
+        throw new Error(
+          "Upload succeeded but no image URL was returned (src/url/image_url/path)."
+        );
+      }
+
+      setPhotos((prev) => [newPhoto, ...prev]);
+      setFile(null);
+      setTitle("");
+      setView("photos");
+    } catch (err: any) {
+      setUploadError(err?.message ?? "Upload failed");
+    } finally {
+      setUploading(false);
+    }
+  }
 
   function renderContent() {
     switch (view) {
       case "photos":
       case "favorites":
         return (
-          <section className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            {visiblePhotos.map((p) => (
-              <PhotoCard key={p.id} p={p} mode={view} onPreview={(id) => setPreviewId(id)} onToggleFavorite={toggleFavorite} onTrash={moveToTrash} />
+          <section className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {visible.map((p) => (
+              <PhotoCard
+                key={p.id}
+                p={p}
+                mode={view}
+                onPreview={openPreview}
+                onToggleFavorite={toggleFavorite}
+                onTrash={moveToTrash}
+              />
             ))}
-            {visiblePhotos.length === 0 && (
-              <div className="col-span-full">
-                <EmptyState title="No items" subtitle="Nothing to show yet." />
-              </div>
+            {visible.length === 0 && (
+              <div className="col-span-full text-sm text-gray-500">No photos to show</div>
             )}
           </section>
         );
+
       case "upload":
-        return <UploadPanel />;
-      case "albums":
         return (
-          <section className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            <EmptyState title="No albums yet" subtitle="Create an album to organize your photos." />
-            <EmptyState title="Tip" subtitle="Select photos and add to a new album." />
-          </section>
+          <form
+            className="rounded-2xl border border-gray-200 bg-white p-6 text-sm shadow-sm"
+            onSubmit={handleUpload}
+          >
+            <label className="mb-2 block font-medium">Upload Photo</label>
+
+            <div className="mb-4 grid gap-3 sm:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-xs text-gray-600">Title (optional)</label>
+                <input
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm outline-none placeholder:text-gray-400 focus:border-gray-400"
+                  placeholder="My awesome photo"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs text-gray-600">Choose image</label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm file:mr-3 file:rounded-md file:border-0 file:bg-gray-100 file:px-3 file:py-2 focus:border-gray-400"
+                />
+                <p className="mt-1 text-[11px] text-gray-500">
+                  รองรับไฟล์รูปภาพเท่านั้น (PNG, JPG, WEBP ฯลฯ)
+                </p>
+              </div>
+            </div>
+
+            {/* Local preview before upload */}
+            {file && (
+              <div className="mb-4 flex items-center gap-4 rounded-xl border border-gray-200 p-3">
+                <img
+                  src={URL.createObjectURL(file)}
+                  alt="preview"
+                  className="h-24 w-32 rounded-lg object-cover"
+                />
+                <div className="text-sm">
+                  <div className="font-medium">{title || file.name}</div>
+                  <div className="text-gray-500">{formatBytesToMB(file.size)}</div>
+                </div>
+              </div>
+            )}
+
+            {uploadError && (
+              <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {uploadError}
+              </div>
+            )}
+
+            <div className="flex items-center gap-2">
+              <button
+                type="submit"
+                disabled={uploading}
+                className="rounded-md bg-blue-600 px-4 py-2 text-white shadow hover:bg-blue-700 disabled:opacity-60"
+              >
+                {uploading ? "Uploading..." : "Upload"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setFile(null);
+                  setTitle("");
+                }}
+                className="rounded-md border border-gray-300 bg-white px-4 py-2 text-gray-800 shadow-sm hover:bg-gray-50"
+              >
+                Clear
+              </button>
+            </div>
+          </form>
         );
+
       case "trash":
         return (
-          <section className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            {visiblePhotos.map((p) => (
-              <PhotoCard key={p.id} p={p} mode="trash" onPreview={(id) => setPreviewId(id)} onRestore={restoreFromTrash} />
+          <section className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {visible.map((p) => (
+              <PhotoCard key={p.id} p={p} mode="trash" onRestore={restoreFromTrash} />
             ))}
-            {visiblePhotos.length === 0 && (
-              <div className="col-span-full">
-                <EmptyState title="Trash is empty" subtitle="Deleted items will appear here for 30 days." />
-              </div>
+            {visible.length === 0 && (
+              <div className="col-span-full text-sm text-gray-500">Trash is empty</div>
             )}
           </section>
         );
+
       case "dashboard":
+        // The real dashboard is at /dashboard now.
         return (
-          <div className="space-y-4">
-            {/* TOP STATS */}
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-200">
-                <div className="text-xs text-gray-500">Total photos</div>
-                <div className="mt-1 text-2xl font-semibold">{stats.totalPhotos.toLocaleString()}</div>
-              </div>
-              <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-200">
-                <div className="text-xs text-gray-500">Total videos</div>
-                <div className="mt-1 text-2xl font-semibold">{stats.totalVideos.toLocaleString()}</div>
-              </div>
-              <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-200">
-                <div className="text-xs text-gray-500">Requests (Last 1 hour)</div>
-                <div className="mt-1 text-2xl font-semibold">{stats.lastHourRequests.toLocaleString()}</div>
-              </div>
-              <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-200">
-                <div className="text-xs text-gray-500">Total Users</div>
-                <div className="mt-1 text-2xl font-semibold">{stats.totalUsers.toLocaleString()}</div>
-              </div>
-            </div>
-
-            {/* MIDDLE: USERS AREA + TRAFFIC BY WEBSITE */}
-            <div className="grid gap-4 lg:grid-cols-3">
-              {/* Area chart */}
-              <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-200 lg:col-span-2">
-                <div className="mb-3 flex items-center gap-4">
-                  <div className="text-sm font-medium text-gray-900">Total Users</div>
-                  <div className="flex items-center gap-3 text-xs text-gray-500">
-                    <span className="inline-flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-gray-900" />This year</span>
-                    <span className="inline-flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-gray-300" />Last year</span>
-                  </div>
-                </div>
-                <div className="h-64">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={usersLine} margin={{ left: 0, right: 0, top: 10, bottom: 0 }}>
-                      <defs>
-                        <linearGradient id="c1" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#111827" stopOpacity={0.15} />
-                          <stop offset="95%" stopColor="#111827" stopOpacity={0} />
-                        </linearGradient>
-                        <linearGradient id="c2" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#D1D5DB" stopOpacity={0.3} />
-                          <stop offset="95%" stopColor="#D1D5DB" stopOpacity={0} />
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid stroke="#F3F4F6" vertical={false} />
-                      <XAxis dataKey="name" tickLine={false} axisLine={false} tick={{ fontSize: 12, fill: "#6B7280" }} />
-                      <YAxis domain={[0, 30]} tickFormatter={(v) => `${v}K`} tickLine={false} axisLine={false} tick={{ fontSize: 12, fill: "#6B7280" }} />
-                      <Tooltip formatter={(v) => `${v}K`} contentStyle={{ borderRadius: 12, border: "1px solid #E5E7EB" }} />
-                      <Area type="monotone" dataKey="thisYear" stroke="#111827" strokeWidth={2} fill="url(#c1)" />
-                      <Area type="monotone" dataKey="lastYear" stroke="#D1D5DB" strokeWidth={2} fill="url(#c2)" />
-                    </AreaChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-
-              {/* Traffic by Website */}
-              <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-200">
-                <div className="mb-4 text-sm font-medium text-gray-900">Traffic by Website</div>
-                <ul className="space-y-3">
-                  {siteTraffic.map((s) => (
-                    <li key={s.name} className="text-sm text-gray-700">
-                      <div className="mb-1 flex items-center justify-between">
-                        <span>{s.name}</span>
-                        <span className="text-xs text-gray-500">{s.value}K</span>
-                      </div>
-                      <div className="h-2 w-full rounded-full bg-gray-100">
-                        <div
-                          className="h-2 rounded-full bg-gray-900"
-                          style={{ width: `${Math.min(100, (s.value / 30) * 100)}%` }}
-                        />
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </div>
-
-            {/* BOTTOM: BAR + PIE */}
-            <div className="grid gap-4 lg:grid-cols-3">
-              {/* Bar chart */}
-              <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-200 lg:col-span-2">
-                <div className="mb-3 text-sm font-medium text-gray-900">Traffic</div>
-                <div className="h-64">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={trafficDaily} margin={{ left: 0, right: 0, top: 10, bottom: 0 }}>
-                      <CartesianGrid stroke="#F3F4F6" vertical={false} />
-                      <XAxis dataKey="day" tickLine={false} axisLine={false} tick={{ fontSize: 12, fill: "#6B7280" }} />
-                      <YAxis domain={[0, 35]} tickFormatter={(v) => `${v}K`} tickLine={false} axisLine={false} tick={{ fontSize: 12, fill: "#6B7280" }} />
-                      <Tooltip formatter={(v) => `${v}K`} contentStyle={{ borderRadius: 12, border: "1px solid #E5E7EB" }} />
-                      <Bar dataKey="value" radius={[8, 8, 0, 0]} fill="#60A5FA" />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-
-              {/* Donut chart */}
-              <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-200">
-                <div className="mb-3 text-sm font-medium text-gray-900">Storage Distribution</div>
-                <div className="h-64">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie data={storagePie} dataKey="value" nameKey="name" innerRadius={60} outerRadius={90} paddingAngle={3}>
-                        {storagePie.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
-                        ))}
-                      </Pie>
-                      <Legend verticalAlign="bottom" height={36} />
-                      <Tooltip formatter={(v) => `${v}%`} contentStyle={{ borderRadius: 12, border: "1px solid #E5E7EB" }} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-                <div className="mt-2 grid grid-cols-3 gap-2 text-xs text-gray-600">
-                  <div className="flex items-center gap-2"><span className="inline-block h-2 w-2 rounded-sm" style={{ backgroundColor: PIE_COLORS[0] }} /> Videos <span className="ml-auto font-medium">52.1%</span></div>
-                  <div className="flex items-center gap-2"><span className="inline-block h-2 w-2 rounded-sm" style={{ backgroundColor: PIE_COLORS[1] }} /> Photos <span className="ml-auto font-medium">22.8%</span></div>
-                  <div className="flex items-center gap-2"><span className="inline-block h-2 w-2 rounded-sm" style={{ backgroundColor: PIE_COLORS[2] }} /> Free space <span className="ml-auto font-medium">13.9%</span></div>
-                </div>
-              </div>
+          <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+            <h2 className="mb-2 text-lg font-semibold">Dashboard moved</h2>
+            <p className="text-sm text-gray-600">
+              The Dashboard page is now available at <code>/dashboard</code>. Use the sidebar link.
+            </p>
+            <div className="mt-4 rounded-xl border border-gray-100 bg-gray-50 p-4 text-xs">
+              <ResponsiveContainer width="100%" height={220}>
+                <AreaChart data={photos}>
+                  <XAxis dataKey="date" />
+                  <YAxis />
+                  <CartesianGrid stroke="#eee" strokeDasharray="5 5" />
+                  <Tooltip />
+                  <Legend />
+                  <Area type="monotone" dataKey="id" />
+                </AreaChart>
+              </ResponsiveContainer>
             </div>
           </div>
         );
+
+      case "albums":
       case "settings":
-        return (
-          <div className="space-y-4">
-            <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-200">
-              <div className="text-sm font-medium">Appearance</div>
-              <div className="mt-2 text-xs text-gray-500">(Demo) Your theme is set to Light.</div>
-            </div>
-          </div>
-        );
+        return <div className="text-sm text-gray-500">Coming soon…</div>;
+
       default:
         return null;
     }
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-900">
-      <div className="mx-auto flex max-w-[1200px] gap-6 p-4 md:p-6">
-        {/* Sidebar */}
-        <aside className="sticky top-4 hidden h-[92vh] w-60 shrink-0 flex-col rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200 md:flex">
-          <div className="flex items-center gap-2 px-2 py-1">
-            <Cloud size={22} className="text-gray-900" />
-            <span className="text-[15px] font-semibold">PhotoCloud</span>
-          </div>
+    <div className="flex min-h-screen bg-gray-50">
+      {/* Sidebar */}
+      <aside className="w-64 border-r border-gray-200 bg-white p-4">
+        <div className="mb-6 text-lg font-semibold">PhotoCloud</div>
+        <div className="flex flex-col gap-2">
+          <SidebarLink icon={Images} label="Photos" active={view === "photos"} onClick={() => setView("photos")} />
+          <SidebarLink icon={UploadIcon} label="Upload" active={view === "upload"} onClick={() => setView("upload")} />
+          <SidebarLink icon={Album} label="Albums" active={view === "albums"} onClick={() => setView("albums")} />
+          <SidebarLink icon={Heart} label="Favorites" active={view === "favorites"} onClick={() => setView("favorites")} />
+          <SidebarLink icon={Trash2} label="Trash" active={view === "trash"} onClick={() => setView("trash")} />
 
-          <nav className="mt-4 space-y-1">
-            <SidebarLink icon={Images} label="Photos" active={view === "photos"} onClick={() => setView("photos")} />
-            <SidebarLink icon={Upload} label="Upload" active={view === "upload"} onClick={() => setView("upload")} />
-            <SidebarLink icon={Album} label="Albums" active={view === "albums"} onClick={() => setView("albums")} />
-            <SidebarLink icon={Heart} label="Favorites" active={view === "favorites"} onClick={() => setView("favorites")} />
-            <SidebarLink icon={Trash2} label="Trash" active={view === "trash"} onClick={() => setView("trash")} />
-            <SidebarLink icon={LayoutDashboard} label="Dashboard" active={view === "dashboard"} onClick={() => setView("dashboard")} />
-          </nav>
+          {/* Real route link for Dashboard */}
+          <SidebarNavLink icon={LayoutDashboard} label="Dashboard" href="/dashboard" />
 
-          <div className="mt-auto space-y-2">
-            <SidebarLink icon={Settings} label="Settings" active={view === "settings"} onClick={() => setView("settings")} />
-            <div className="flex items-center gap-3 rounded-xl px-3 py-2">
-              <div className="grid h-9 w-9 place-items-center rounded-full bg-gray-100 text-xs font-semibold">CT</div>
-              <div className="min-w-0">
-                <div className="truncate text-sm font-medium">Chindhanai Tho...</div>
-                <div className="truncate text-xs text-gray-500">chindew2549@gmail.com</div>
+          <SidebarLink
+            icon={Settings}
+            label="Settings"
+            active={view === "settings"}
+            onClick={() => setView("settings")}
+          />
+        </div>
+      </aside>
+
+      {/* Main content */}
+      <main className="flex-1 p-8">
+        <header className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <h1 className="text-2xl font-bold">{titleMap[view]}</h1>
+          {(view === "photos" || view === "favorites") && (
+            <div className="flex w-full items-center gap-2 sm:w-80">
+              <div className="relative flex-1">
+                <SearchIcon
+                  size={16}
+                  className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+                />
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search photos..."
+                  className="w-full rounded-lg border border-gray-300 bg-white py-2 pl-9 pr-3 text-sm shadow-sm outline-none placeholder:text-gray-400 focus:border-gray-400"
+                />
               </div>
+              <button className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm shadow-sm">
+                <Filter size={16} /> Filters
+              </button>
             </div>
-          </div>
-        </aside>
+          )}
+        </header>
 
-        {/* Main */}
-        <main className="flex-1">
-          {/* Top bar */}
-          <header className="mb-4 flex items-center justify-between">
-            <h1 className="text-lg font-semibold">{titleMap[view]}</h1>
+        {renderContent()}
 
-            <div className="flex items-center gap-2">
-              {view === "photos" && (
-                <div className="relative hidden w-72 items-center md:flex">
-                  <Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-                  <input
-                    type="text"
-                    placeholder="Search photos..."
-                    className="w-full rounded-xl border border-gray-200 bg-white py-2 pl-9 pr-3 text-sm outline-none ring-0 placeholder:text-gray-400 focus:border-gray-300"
-                  />
-                </div>
-              )}
-              {view === "photos" && (
-                <button className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm shadow-sm hover:bg-gray-50">
-                  <Filter size={16} />
-                  Filters
-                </button>
-              )}
-            </div>
-          </header>
-
-          {/* Content */}
-          {renderContent()}
-        </main>
-      </div>
-
-      {/* Preview modal */}
-      <PreviewModal photo={items.find((p) => p.id === previewId)} onClose={() => setPreviewId(null)} />
+        {/* Preview modal */}
+        {previewId !== null &&
+          (() => {
+            const p = photos.find((x) => x.id === previewId)!;
+            const inTrash = !!p.trashed;
+            return (
+              <PreviewModal
+                photo={p}
+                meta={imgMeta}
+                onClose={closePreview}
+                onToggleFavorite={toggleFavorite}
+                onTrash={moveToTrash}
+                onRestore={restoreFromTrash}
+                inTrash={inTrash}
+              />
+            );
+          })()}
+      </main>
     </div>
   );
 }
-
-
