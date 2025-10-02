@@ -36,6 +36,7 @@ import {
   Tooltip,
   Legend,
 } from "recharts";
+import UploadPanel from "./UploadPanel";
 
 interface PhotoItem {
   id: string; // uuid.UUID is a string in JSON
@@ -53,67 +54,13 @@ interface GalleryItem {
   date: string;
   size: string; // You'll need to derive this
   src: string; // This will be the thumbnail_url or file_url
+  thumbnail: string;
   preview: boolean;
   trashed: boolean;
   favorite: boolean; // You'll need to set a default for this
   // Add other properties from PhotoItem if your component needs them
   // e.g., filename: string;
 }
-
-const photos = [
-  {
-    id: 1,
-    title: "Mountain Landscape",
-    date: "2025-09-10",
-    size: "4.2 MB",
-    src: "https://images.unsplash.com/photo-1501785888041-af3ef285b470?q=80&w=1200&auto=format&fit=crop",
-    preview: true,
-    trashed: false,
-  },
-  {
-    id: 2,
-    title: "City Architecture",
-    date: "2025-09-09",
-    size: "3.8 MB",
-    src: "https://images.unsplash.com/photo-1467269204594-9661b134dd2b?q=80&w=1200&auto=format&fit=crop",
-    preview: true,
-    favorite: true,
-    trashed: false,
-  },
-  {
-    id: 3,
-    title: "Portrait Session",
-    date: "2025-09-08",
-    size: "5.1 MB",
-    src: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?q=80&w=1200&auto=format&fit=crop&sat=-100",
-    favorite: true,
-    trashed: false,
-  },
-  {
-    id: 4,
-    title: "Food Photography",
-    date: "2025-09-07",
-    size: "2.9 MB",
-    src: "https://images.unsplash.com/photo-1504674900247-0877df9cc836?q=80&w=1200&auto=format&fit=crop",
-    trashed: false,
-  },
-  {
-    id: 5,
-    title: "Sunset Travel",
-    date: "2025-09-06",
-    size: "3.2 MB",
-    src: "https://images.unsplash.com/photo-1497215728101-495cad6e0772?q=80&w=1200&auto=format&fit=crop",
-    trashed: false,
-  },
-  {
-    id: 6,
-    title: "Abstract Art",
-    date: "2025-09-05",
-    size: "4.7 MB",
-    src: "https://images.unsplash.com/photo-1504199367641-aba8151af406?q=80&w=1200&auto=format&fit=crop",
-    trashed: false,
-  },
-];
 
 type SidebarLinkProps = {
   icon: React.ComponentType<{ size?: number }>;
@@ -144,6 +91,7 @@ type Photo = {
   date: string;
   size: string;
   src: string;
+  thumbnail: string;
   preview?: boolean;
   favorite?: boolean;
   trashed?: boolean;
@@ -171,7 +119,7 @@ function PhotoCard({ p, mode = "photos", onPreview, onToggleFavorite, onTrash, o
       }}
     >
       <div className="relative aspect-[4/3] w-full">
-        <img src={p.src} alt={p.title} className="h-full w-full object-cover" loading="lazy" />
+        <img src={p.thumbnail} alt={p.title} className="h-full w-full object-cover" loading="lazy" />
 
         {/* file size badge */}
         <div className="absolute right-2 top-2 rounded-full bg-black/60 px-2 py-1 text-[11px] font-medium text-white backdrop-blur">
@@ -239,23 +187,6 @@ function PhotoCard({ p, mode = "photos", onPreview, onToggleFavorite, onTrash, o
         </div>
       </div>
     </motion.div>
-  );
-}
-
-function UploadPanel() {
-  return (
-    <div className="rounded-2xl border border-dashed border-gray-300 bg-white p-10 text-center shadow-sm">
-      <div className="mx-auto mb-4 grid h-12 w-12 place-items-center rounded-full bg-gray-100">
-        <Upload size={20} />
-      </div>
-      <p className="text-sm text-gray-700">Drag & drop photos here, or</p>
-      <div className="mt-3">
-        <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800">
-          <input type="file" multiple className="hidden" />
-          Choose files
-        </label>
-      </div>
-    </div>
   );
 }
 
@@ -509,7 +440,8 @@ export default function PhotoCloud() {
             title: item.caption || item.filename,
             date: new Date(item.upload_date).toLocaleDateString(),
             size: 'N/A',
-            src: await loadThumbnail(`${API_BASE_URL}/api/v1${item.thumbnail_url}`),
+            src: await loadThumbnail(`${API_BASE_URL}/api/v1${item.file_url}`),
+            thumbnail: await loadThumbnail(`${API_BASE_URL}/api/v1${item.thumbnail_url}`),
             preview: false,
             trashed: false,
             favorite: false,
