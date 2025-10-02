@@ -37,6 +37,29 @@ import {
   Legend,
 } from "recharts";
 
+interface PhotoItem {
+  id: string; // uuid.UUID is a string in JSON
+  filename: string;
+  caption: string | null;
+  upload_date: string; // datetime.datetime is a string in JSON
+  file_url: string; // URL to the original file
+  thumbnail_url: string; // URL to the thumbnail
+  exif_data: Record<string, any> | null;
+}
+
+interface GalleryItem {
+  id: string | string; // Use string to match the UUID, or update component logic if only number is expected
+  title: string;
+  date: string;
+  size: string; // You'll need to derive this
+  src: string; // This will be the thumbnail_url or file_url
+  preview: boolean;
+  trashed: boolean;
+  favorite: boolean; // You'll need to set a default for this
+  // Add other properties from PhotoItem if your component needs them
+  // e.g., filename: string;
+}
+
 const photos = [
   {
     id: 1,
@@ -116,7 +139,7 @@ function SidebarLink({ icon: Icon, label, active = false, onClick }: SidebarLink
 }
 
 type Photo = {
-  id: number;
+  id: string;
   title: string;
   date: string;
   size: string;
@@ -129,10 +152,10 @@ type Photo = {
 type PhotoCardProps = {
   p: Photo;
   mode?: "photos" | "favorites" | "trash";
-  onPreview?: (id: number) => void;
-  onToggleFavorite?: (id: number) => void;
-  onTrash?: (id: number) => void;
-  onRestore?: (id: number) => void;
+  onPreview?: (id: string) => void;
+  onToggleFavorite?: (id: string) => void;
+  onTrash?: (id: string) => void;
+  onRestore?: (id: string) => void;
 };
 
 function PhotoCard({ p, mode = "photos", onPreview, onToggleFavorite, onTrash, onRestore }: PhotoCardProps) {
@@ -283,9 +306,43 @@ function PreviewModal({
 }
 
 export default function PhotoCloud() {
+
   const [view, setView] = useState<ViewType>("photos");
-  const [items, setItems] = useState(() => photos.map((p) => ({ ...p, favorite: !!p.favorite, trashed: !!p.trashed })));
-  const [previewId, setPreviewId] = useState<number | null>(null);
+  const [items, setItems] = useState<GalleryItem[]>([]);
+  const [previewId, setPreviewId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadThumbnail = async (apiUrl: string) => {
+
+    const accessToken = localStorage.getItem("accessToken");
+
+    const response = await fetch(apiUrl, {
+      method: "GET",
+      headers: {
+        // 3. Attach the JWT to the Authorization header
+        "Authorization": `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      
+      if (response.status === 401) {
+         router.push('/login'); 
+      }
+      throw new Error(`Failed to fetch photos: ${response.statusText}`);
+    }
+
+    const blobImg = await response.blob()
+    const blobBase64 = await new Promise<string>((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.readAsDataURL(blobImg);
+    });
+
+    return blobBase64
+
+  }
 
   // ---------------- Dashboard demo data (edit freely) ----------------
   const stats = {
@@ -355,9 +412,9 @@ export default function PhotoCloud() {
   })();
 
   // actions
-  const toggleFavorite = (id: number) => setItems((prev) => prev.map((p) => (p.id === id ? { ...p, favorite: !p.favorite } : p)));
-  const moveToTrash = (id: number) => setItems((prev) => prev.map((p) => (p.id === id ? { ...p, trashed: true, favorite: false } : p)));
-  const restoreFromTrash = (id: number) => setItems((prev) => prev.map((p) => (p.id === id ? { ...p, trashed: false } : p)));
+  const toggleFavorite = (id: string) => setItems((prev) => prev.map((p) => (p.id === id ? { ...p, favorite: !p.favorite } : p)));
+  const moveToTrash = (id: string) => setItems((prev) => prev.map((p) => (p.id === id ? { ...p, trashed: true, favorite: false } : p)));
+  const restoreFromTrash = (id: string) => setItems((prev) => prev.map((p) => (p.id === id ? { ...p, trashed: false } : p)));
 
   const router = useRouter();
 
@@ -406,13 +463,83 @@ export default function PhotoCloud() {
     
   }, []);
 
+  useEffect(() => {
+    const fetchPhotos = async () => {
+      setIsLoading(true);
+      setError(null);
+      
+      // 1. Get the JWT from local storage
+      const accessToken = localStorage.getItem("accessToken");
+      if (!accessToken) {
+        setError("Authentication token not found. Please log in.");
+        setIsLoading(false);
+        return;
+      }
+
+      // 2. Define the API endpoint
+      // NOTE: Replace 'http://localhost:8000' with your actual API base URL.
+      // A common practice is to use an environment variable: 
+      // const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
+      const API_BASE_URL = 'http://localhost:8000'; 
+      const apiUrl = `${API_BASE_URL}/api/v1/storage/gallery`;
+
+      try {
+        const response = await fetch(apiUrl, {
+          method: "GET",
+          headers: {
+            // 3. Attach the JWT to the Authorization header
+            "Authorization": `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+        });
+
+        if (!response.ok) {
+          // Handle API errors (e.g., 401 Unauthorized, 404 Not Found)
+          if (response.status === 401) {
+             // Example: Redirect to login page on unauthorized
+             router.push('/login'); 
+          }
+          throw new Error(`Failed to fetch photos: ${response.statusText}`);
+        }
+
+        const data: PhotoItem[] = await response.json();
+        
+        const formattedItemsPromises = data.map(async (item) => ({
+            id: item.id,
+            title: item.caption || item.filename,
+            date: new Date(item.upload_date).toLocaleDateString(),
+            size: 'N/A',
+            src: await loadThumbnail(`${API_BASE_URL}/api/v1${item.thumbnail_url}`),
+            preview: false,
+            trashed: false,
+            favorite: false,
+        }));
+        
+        const formattedItems = await Promise.all(formattedItemsPromises);
+
+        setItems(formattedItems);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "An unknown error occurred.");
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchPhotos();
+    return () => {};
+  }, [isAuthenticated, router]);
+
   if (isLoading) {
-      return <div className="p-10 text-center">Loading...</div>;
+    return <div className="p-10 text-center">Loading...</div>;
   }
 
   if (!isAuthenticated) {
     router.push('/login')
   }
+
+  const mappedItems = items.map((p) => ({
+    ...p,
+  }));
 
   function renderContent() {
     switch (view) {

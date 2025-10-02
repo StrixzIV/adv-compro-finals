@@ -123,6 +123,7 @@ def extract_exif_data(file_content) -> Optional[dict[str, any]]:
 
 def get_object_sync(object_key: str) -> Generator[bytes, None, None]:
     """Synchronously fetches the object stream from MinIO."""
+    response = None  # Initialize response to None
     try:
         response = minio_client.get_object(
             bucket_name=MINIO_BUCKET_NAME,
@@ -134,10 +135,10 @@ def get_object_sync(object_key: str) -> Generator[bytes, None, None]:
     except S3Error as e:
         if e.code == 'NoSuchKey':
             raise FileNotFoundError(f"File not found in MinIO: {object_key}")
-        raise
     finally:
-        response.close()
-        response.release_conn()
+        if response is not None:  # Only close if response was created
+            response.close()
+            response.release_conn()
 
 def remove_object_sync(object_key: str):
     """Synchronously removes the object from MinIO."""
@@ -178,7 +179,7 @@ def put_thumbnail_sync(
 @storage_router.post("/upload/photo")
 async def upload_photo(
     file: Annotated[UploadFile, File()],
-    user_id: Annotated[str, Depends(get_uid)],
+    user_id: Annotated[uuid.UUID, Depends(get_uid)],
 ):
     """
     Uploads a photo to MinIO in a user-specific folder using a non-blocking thread pool.
@@ -259,7 +260,7 @@ async def upload_photo(
 @storage_router.get("/fetch/{photo_id}")
 async def fetch_photo(
     photo_id: uuid.UUID,
-    user_id: Annotated[str, Depends(get_uid)], # Ensures user is logged in
+    user_id: Annotated[uuid.UUID, Depends(get_uid)], # Ensures user is logged in
 ):
     """
     Fetches a photo file from MinIO for preview or download.
@@ -320,7 +321,7 @@ async def fetch_photo(
 @storage_router.delete("/delete/{photo_id}")
 async def delete_photo(
     photo_id: uuid.UUID,
-    user_id: Annotated[str, Depends(get_uid)],
+    user_id: Annotated[uuid.UUID, Depends(get_uid)],
 ):
     """
     Deletes a photo from MinIO and removes its metadata from the database.
@@ -384,28 +385,13 @@ async def delete_photo(
 @storage_router.get("/fetch/thumbnail/{photo_id}")
 async def fetch_thumbnail( # 🔑 NEW FUNCTION
     photo_id: uuid.UUID,
-    user_id: Annotated[str, Depends(get_uid)],
+    user_id: Annotated[uuid.UUID, Depends(get_uid)],
 ):
     """
     Fetches the thumbnail file from MinIO for gallery display.
     """
-    
-    # 1. VERIFY OWNERSHIP AND GET THUMBNAIL PATH
-    query = """
-        SELECT thumbnail_path
-        FROM photos
-        WHERE id = :photo_id AND user_id = :user_id AND is_deleted = FALSE
-    """
-    values = {"photo_id": photo_id, "user_id": user_id}
-    photo_data = await database.fetch_one(query=query, values=values)
 
-    if not photo_data or not photo_data["thumbnail_path"]:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Thumbnail not found or access denied."
-        )
-
-    object_key = photo_data["thumbnail_path"]
+    object_key = f"users/{user_id}/thumbnail/{photo_id}.jpeg"
     
     try:
         # 2. ASYNCHRONOUSLY GET OBJECT STREAM FROM MINIO
@@ -438,7 +424,7 @@ async def fetch_thumbnail( # 🔑 NEW FUNCTION
 
 @storage_router.get("/gallery", response_model=list[PhotoGalleryItem])
 async def fetch_all_photos(
-    user_id: Annotated[str, Depends(get_uid)],
+    user_id: Annotated[uuid.UUID, Depends(get_uid)],
     limit: Annotated[int, Query(ge=1, le=100)] = 50, # Pagination limit, default 50, max 100
     offset: Annotated[int, Query(ge=0)] = 0, # Pagination offset, default 0
 ):

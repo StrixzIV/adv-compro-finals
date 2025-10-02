@@ -1,4 +1,5 @@
 import jwt
+import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -60,9 +61,9 @@ def get_uid(token: Annotated[str, Depends(oauth2_scheme)]) -> str:
         if user_id is None:
             raise credentials_exception
             
-        return user_id
+        return uuid.UUID(user_id)
         
-    except jwt.PyJWTError:
+    except (jwt.PyJWTError, ValueError):
         raise credentials_exception
 
 
