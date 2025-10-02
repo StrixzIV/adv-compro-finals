@@ -45,6 +45,28 @@ def verify_password(plain_password, hashed_password):
     return pwd_context.verify(plain_password, hashed_password)
 
 
+def get_uid(token: Annotated[str, Depends(oauth2_scheme)]) -> str:
+
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id: str = payload.get("sub")
+        
+        if user_id is None:
+            raise credentials_exception
+            
+        return user_id
+        
+    except jwt.PyJWTError:
+        raise credentials_exception
+
+
+
 def create_access_token(data: dict, expires_delta: timedelta | None = None):
 
     to_encode = data.copy()

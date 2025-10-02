@@ -68,6 +68,8 @@ services:
       FASTAPI_URL: ${FASTAPI_URL}
       GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID}
       GOOGLE_OAUTH_CLIENT_SECRETS: ${GOOGLE_OAUTH_CLIENT_SECRETS}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
     volumes:
       - ./backend/src:/var/backend/src:rw
       - ./backend/tools:/var/backend/tools:ro
