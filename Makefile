@@ -1,6 +1,6 @@
 # Shell
 SHELL := /usr/bin/env bash
-VOL_DATA_DIR = data
+VOL_DATA_DIR = data minio
 
 # Rules
 all: up

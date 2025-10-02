@@ -86,20 +86,23 @@ services:
         - action: rebuild
           path: backend/tools/
 
-  # nextjs:
-  #   build:
-  #     context: ./nextjs
-  #   ports:
-  #     - "3000:3000"
-  #   env_file:
-  #     - .env
-  #   volumes:
-  #     - ./nextjs:/src
-  #     - /src/node_modules # This masks the node_modules directory from the host system and prevents it from being mapped from your local filesystem. The container will manage its own node_modules directory.
-  #   working_dir: /src
-  #   command: npm run dev
-  #   networks:
-  #     - backend_network
+  minio:
+    container_name: minio
+    build:
+      context: ./s3
+      dockerfile: Dockerfile
+    restart: always
+    env_file:
+      - .env
+    networks:
+      - backend_network
+    volumes:
+      - ./minio/:/data/:rw
+    command: server /data --console-address ":9001"
+    expose:
+      - 9000
+    ports:
+      - "9001:9001"
 
 networks:
   backend_network:
