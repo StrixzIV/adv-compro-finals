@@ -30,6 +30,28 @@ import { PhotoItem, GalleryItem, ViewType } from "./interfaces/types";
 
 const API_BASE_URL = 'http://localhost:8000';
 
+function formatBytes(bytes: number, decimals: number = 2): string {
+
+  // Return '0 B' immediately if size is 0
+  if (bytes === 0) return '0 B';
+
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
+
+  // Ensure the number of decimals is valid (non-negative)
+  const dm = decimals < 0 ? 0 : decimals;
+
+  // Calculate the index 'i' of the appropriate unit in the 'sizes' array.
+  // The index is determined by the floor of the base-1024 logarithm of the byte size.
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+
+  // Calculate the size in the determined unit (e.g., MB) and format it.
+  // parseFloat is used to trim unnecessary trailing zeros from the fixed decimal output.
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+
+
+}
+
 export default function PhotoCloud() {
 
   const [view, setView] = useState<ViewType>("photos");
@@ -310,7 +332,7 @@ export default function PhotoCloud() {
             id: item.id,
             title: item.caption || item.filename,
             date: new Date(item.upload_date).toLocaleDateString(),
-            size: 'N/A', 
+            size: formatBytes(item.size_bytes), 
             src: await loadAsset(`${API_BASE_URL}/api/v1${item.file_url}`),
             thumbnail: await loadAsset(`${API_BASE_URL}/api/v1${item.thumbnail_url}`),
             preview: false,

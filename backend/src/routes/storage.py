@@ -46,6 +46,7 @@ class PhotoGalleryItem(BaseModel):
     is_deleted: bool 
     thumbnail_url: str # Placeholder for future thumbnail feature
     exif_data: Optional[dict[str, Any]] = None
+    size_bytes: int
 
 
 def create_thumbnail_in_memory(file_content) -> Optional[io.BytesIO]:
@@ -146,6 +147,8 @@ def _process_photo_record(record) -> PhotoGalleryItem:
     file_url = f"/storage/fetch/{record['id']}" 
     thumbnail_url = f"/storage/fetch/thumbnail/{record['id']}" 
 
+    stat = minio_client.stat_object(MINIO_BUCKET_NAME, object_key)
+
     return PhotoGalleryItem(
         id=record["id"],
         filename=record["filename"],
@@ -154,7 +157,8 @@ def _process_photo_record(record) -> PhotoGalleryItem:
         file_url=file_url,
         thumbnail_url=thumbnail_url,
         exif_data=parsed_exif_data,
-        is_deleted=record["is_deleted"] # 🔑 Include soft-delete status
+        is_deleted=record["is_deleted"], # 🔑 Include soft-delete status
+        size_bytes=stat.size
     )
 
 
