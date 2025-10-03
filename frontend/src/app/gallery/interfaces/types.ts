@@ -53,6 +53,7 @@ export type PhotoCardProps = {
   onToggleFavorite?: (id: string) => void;
   onTrash?: (id: string) => void;
   onRestore?: (id: string) => void;
+  onDeletePermanent?: (id: string) => void;
 };
 
 export type PreviewModalProps = {

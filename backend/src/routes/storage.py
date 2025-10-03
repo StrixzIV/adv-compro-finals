@@ -177,11 +177,21 @@ def get_object_sync(object_key: str) -> Generator[bytes, None, None]:
             response.close()
             response.release_conn()
 
+
 def remove_object_sync(object_key: str):
     """Synchronously removes the object from MinIO."""
     minio_client.remove_object(
         bucket_name=MINIO_BUCKET_NAME,
         object_name=object_key
+    )
+
+
+def remove_thumbnail_sync(photo_id: uuid.UUID, user_id: uuid.UUID):
+    """Synchronously removes the thumbnail object from MinIO."""
+    thumbnail_object_key = f"users/{user_id}/thumbnail/{photo_id}.jpeg"
+    minio_client.remove_object(
+        bucket_name=MINIO_BUCKET_NAME,
+        object_name=thumbnail_object_key
     )
 
 
@@ -304,12 +314,12 @@ async def fetch_photo(
     User ownership is verified before fetching.
     """
     
-    # 1. VERIFY OWNERSHIP AND GET FILE PATH
     query = """
         SELECT file_path, filename
         FROM photos
         WHERE id = :photo_id AND user_id = :user_id
     """
+    
     values = {"photo_id": photo_id, "user_id": user_id}
     photo_data = await database.fetch_one(query=query, values=values)
 
@@ -323,21 +333,15 @@ async def fetch_photo(
     filename = photo_data["filename"]
     
     try:
-        # 2. ASYNCHRONOUSLY GET OBJECT STREAM FROM MINIO
-        # Run the synchronous MinIO fetching operation in a thread pool
         file_stream = await anyio.to_thread.run_sync(
             get_object_sync,
             object_key
         )
         
-        # 3. RETURN AS STREAMING RESPONSE
-        # StreamingResponse handles reading the generator returned by get_object_sync
-        # and streams it back to the client, keeping the app non-blocking.
         return StreamingResponse(
             file_stream,
-            media_type="application/octet-stream", # Generic binary type
+            media_type="application/octet-stream",
             headers={
-                # Force download/filename for the client
                 "Content-Disposition": f"attachment; filename=\"{filename}\"" 
             }
         )
@@ -361,15 +365,15 @@ async def delete_photo(
     user_id: Annotated[uuid.UUID, Depends(get_uid)],
 ):
     """
-    Deletes a photo from MinIO and removes its metadata from the database.
+    Performs a HARD DELETE: Deletes a photo from MinIO and removes its metadata 
+    from the database, regardless of its soft-delete status.
     """
     
-    # 1. VERIFY OWNERSHIP AND GET FILE PATH
-    # Select the file_path and verify user ownership before deletion
+    # 1. VERIFY OWNERSHIP AND GET FILE/THUMBNAIL PATHS
     query = """
         SELECT file_path
         FROM photos
-        WHERE id = :photo_id AND user_id = :user_id AND is_deleted = FALSE
+        WHERE id = :photo_id AND user_id = :user_id
     """
     values = {"photo_id": photo_id, "user_id": user_id}
     photo_data = await database.fetch_one(query=query, values=values)
@@ -383,36 +387,51 @@ async def delete_photo(
     object_key = photo_data["file_path"]
     
     try:
-        # 2. DELETE FROM MINIO
+        # 2. DELETE FROM MINIO (MAIN FILE AND THUMBNAIL)
         await anyio.to_thread.run_sync(
             remove_object_sync,
             object_key
         )
+        await anyio.to_thread.run_sync(
+            remove_thumbnail_sync,
+            photo_id,
+            user_id
+        )
         
         # 3. DELETE FROM DATABASE
-        # Alternatively, you could just set is_deleted = TRUE (soft delete)
         delete_query = """
             DELETE FROM photos
             WHERE id = :photo_id AND user_id = :user_id
         """
         await database.execute(query=delete_query, values={"photo_id": photo_id, "user_id": user_id})
 
-        return {"message": f"Photo {photo_id} deleted successfully."}
+        return {"message": f"Photo {photo_id} permanently deleted."}
         
     except S3Error as e:
-        # If the file wasn't found in MinIO but exists in DB, log and proceed 
-        # to delete the DB record.
+
         if e.code == 'NoSuchKey':
-             print(f"Warning: Photo {photo_id} not found in MinIO, but metadata exists. Deleting metadata.")
-             # Fall-through to DB deletion (step 3)
+
+            delete_query = """
+            DELETE FROM photos
+            WHERE id = :photo_id AND user_id = :user_id
+            """
+
+            await database.execute(query=delete_query, values={"photo_id": photo_id, "user_id": user_id})
+            return {"message": f"Photo {photo_id} permanently deleted (only metadata remaining)."}
+        
         else:
-            print(f"Error deleting file from MinIO: {e}")
+
+            print(f"Error deleting file from Minio: {e}")
+
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to delete file from storage."
             )
+
     except Exception as e:
-        print(f"Error during delete operation: {e}")
+
+        print(f"Error during hard delete operation: {e}")
+
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to delete photo metadata."
@@ -464,6 +483,73 @@ async def soft_delete_photo(
             detail="Failed to perform soft delete on photo metadata."
         )
     
+
+@storage_router.delete("/clear-trash")
+async def clear_trash(
+    user_id: Annotated[uuid.UUID, Depends(get_uid)],
+):
+    """
+    Performs a HARD DELETE on ALL soft-deleted photos for the user.
+    Deletes files from MinIO and removes metadata from the database.
+    """
+    
+    # 1. GET ALL TRASHED PHOTO METADATA
+    query = """
+        SELECT id, file_path
+        FROM photos
+        WHERE user_id = :user_id AND is_deleted = TRUE
+    """
+    records = await database.fetch_all(query=query, values={"user_id": user_id})
+
+    if not records:
+        return {"message": "Trash is already empty."}
+
+    deleted_count = 0
+    
+    for record in records:
+        photo_id = record['id']
+        object_key = record['file_path']
+        
+        try:
+            # 2. DELETE FROM MINIO (MAIN FILE AND THUMBNAIL)
+            await anyio.to_thread.run_sync(
+                remove_object_sync,
+                object_key
+            )
+            await anyio.to_thread.run_sync(
+                remove_thumbnail_sync,
+                photo_id,
+                user_id
+            )
+            
+            # 3. DELETE FROM DATABASE
+            delete_query = """
+                DELETE FROM photos
+                WHERE id = :photo_id AND user_id = :user_id
+            """
+            await database.execute(query=delete_query, values={"photo_id": photo_id, "user_id": user_id})
+            deleted_count += 1
+            
+        except S3Error as e:
+            
+            if e.code == 'NoSuchKey':
+                 print(f"Warning: Photo {photo_id} not found in MinIO. Deleting metadata.")
+                 delete_query = """
+                    DELETE FROM photos
+                    WHERE id = :photo_id AND user_id = :user_id
+                 """
+                 await database.execute(query=delete_query, values={"photo_id": photo_id, "user_id": user_id})
+                 deleted_count += 1
+            
+            else:
+                print(f"Error deleting file {photo_id} from Minio during clear-trash: {e}")
+                
+        except Exception as e:
+            print(f"Error processing delete for file {photo_id} during clear-trash: {e}")
+            
+    return {"message": f"Successfully deleted {deleted_count} item(s) from trash."}
+
+
 
 @storage_router.get("/fetch/thumbnail/{photo_id}")
 async def fetch_thumbnail( # 🔑 NEW FUNCTION

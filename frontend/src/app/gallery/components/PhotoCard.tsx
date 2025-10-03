@@ -3,7 +3,7 @@ import { motion } from "framer-motion";
 import { Eye, Heart, Trash2, Undo2 } from "lucide-react";
 import { PhotoCardProps } from "../interfaces/types";
 
-export default function PhotoCard({ p, mode = "photos", onPreview, onToggleFavorite, onTrash, onRestore }: PhotoCardProps) {
+export default function PhotoCard({ p, mode = "photos", onPreview, onToggleFavorite, onTrash, onRestore, onDeletePermanent }: PhotoCardProps) {
   return (
     <motion.div
       whileHover={{ y: -2 }}
@@ -63,16 +63,29 @@ export default function PhotoCard({ p, mode = "photos", onPreview, onToggleFavor
             </button>
           )}
           {mode === "trash" && (
-            <button
-              aria-label="Restore"
-              onClick={(e) => {
-                e.stopPropagation();
-                onRestore?.(p.id);
-              }}
-              className="rounded-full bg-white/90 p-2 text-gray-700 shadow-sm ring-1 ring-gray-200 hover:bg-white"
-            >
-              <Undo2 size={16} />
-            </button>
+            <>
+              <button
+                aria-label="Restore"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRestore?.(p.id);
+                }}
+                className="rounded-full bg-white/90 p-2 text-gray-700 shadow-sm ring-1 ring-gray-200 hover:bg-white"
+              >
+                <Undo2 size={16} />
+              </button>
+              {/* Permanent Delete Button */}
+              <button
+                aria-label="Permanently Delete"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDeletePermanent?.(p.id);
+                }}
+                className="rounded-full bg-white/90 p-2 text-red-600 shadow-sm ring-1 ring-gray-200 hover:bg-white/95"
+              >
+                <Trash2 size={16} />
+              </button>
+            </>
           )}
         </div>
       </div>

@@ -169,6 +169,74 @@ export default function PhotoCloud() {
     
   };
 
+  const deletePermanent = async (id: string) => { // 🔑 NEW: Hard delete function for a single photo
+    const accessToken = localStorage.getItem("accessToken");
+    if (!accessToken) return;
+    setError(null);
+
+    // Confirmation dialog (basic implementation)
+    if (!window.confirm("Are you sure you want to permanently delete this photo? This action cannot be undone.")) {
+        return;
+    }
+
+    try {
+      
+      const apiUrl = `${API_BASE_URL}/api/v1/storage/delete/${id}`;
+      const response = await fetch(apiUrl, {
+        method: "DELETE", // Reusing the hard delete endpoint
+        headers: {
+          "Authorization": `Bearer ${accessToken}`,
+        },
+      });
+
+      if (!response.ok) {
+         if (response.status === 404) {
+             throw new Error("Photo not found or access denied.");
+         }
+         throw new Error(`Failed to permanently delete photo: ${response.statusText}`);
+      }
+      
+      // Update local state: remove item completely
+      setItems((prev) => prev.filter((p) => p.id !== id));
+
+    }
+    
+    catch (e) {
+      setError(e instanceof Error ? e.message : "An unknown error occurred while permanently deleting.");
+    }
+  };
+
+  const clearTrash = async () => { // 🔑 NEW: Clear all trash function
+    const accessToken = localStorage.getItem("accessToken");
+    if (!accessToken) return;
+    setError(null);
+
+    // Confirmation dialog
+    if (!window.confirm("Are you sure you want to permanently delete ALL items in the trash? This action cannot be undone.")) {
+        return;
+    }
+
+    try {
+        const apiUrl = `${API_BASE_URL}/api/v1/storage/clear-trash`;
+        const response = await fetch(apiUrl, {
+            method: "DELETE",
+            headers: {
+                "Authorization": `Bearer ${accessToken}`,
+            },
+        });
+
+        if (!response.ok) {
+            throw new Error(`Failed to clear trash: ${response.statusText}`);
+        }
+
+        // After successful clear, remove all trashed items from local state
+        setItems((prev) => prev.filter((p) => !p.trashed));
+        
+    } catch (e) {
+        setError(e instanceof Error ? e.message : "An unknown error occurred while clearing trash.");
+    }
+  }
+
   const toggleFavorite = (id: string) => setItems((prev) => prev.map((p) => (p.id === id ? { ...p, favorite: !p.favorite } : p)));
 
   // --- useEffect for initial auth check and token handling ---
@@ -328,8 +396,8 @@ export default function PhotoCloud() {
                 p={p} 
                 mode="trash" 
                 onPreview={(id: string) => setPreviewId(id)} 
-                onRestore={restoreFromTrash} // 🔑 Connected to the new restore function
-                // onDeletePermanent={deletePermanent} function would go here
+                onRestore={restoreFromTrash} 
+                onDeletePermanent={deletePermanent} // 🔑 Passed the new permanent delete function
               />
             ))}
             {visiblePhotos.length === 0 && (
@@ -338,13 +406,12 @@ export default function PhotoCloud() {
               </div>
             )}
             
-            {/* 🔑 Placeholder for future "Clear Trash" button */}
+            {/* Clear Trash Button */}
             {visiblePhotos.length > 0 && (
                 <div className="col-span-full pt-4 text-center">
                     <button 
                         className="rounded-xl bg-red-600 px-4 py-2 text-sm font-medium text-white shadow-md transition hover:bg-red-700"
-                        // ✅ Replaced alert() with a console log/placeholder for modal UI
-                        onClick={() => console.log("Future feature: This will permanently delete all items in trash.")}
+                        onClick={clearTrash} // 🔑 Calls the new clear trash function
                     >
                         Clear Trash Permanently
                     </button>
