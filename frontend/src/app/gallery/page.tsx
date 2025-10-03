@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 
 import { useRouter } from 'next/navigation'
 
@@ -28,6 +28,7 @@ import DashboardCharts from "./components/DashboardCharts";
 
 import { PhotoItem, GalleryItem, ViewType } from "./interfaces/types";
 
+const API_BASE_URL = 'http://localhost:8000';
 
 export default function PhotoCloud() {
 
@@ -49,19 +50,15 @@ export default function PhotoCloud() {
     settings: "Settings",
   };
 
-  // Memoized filtered photos based on current view
   const visiblePhotos = useMemo(() => {
+    // NOTE: The current backend /gallery route only fetches non-deleted photos.
+    // For a real Trash view, you'd need a separate backend route like /storage/trash.
+    // We'll simulate the state here for now, but in a production app, these lists
+    // would be fetched from two separate endpoints.
     if (view === "favorites") return items.filter((p) => p.favorite && !p.trashed);
     if (view === "trash") return items.filter((p) => p.trashed);
     return items.filter((p) => !p.trashed);
   }, [items, view]);
-
-
-  // Photo Actions
-  const toggleFavorite = (id: string) => setItems((prev) => prev.map((p) => (p.id === id ? { ...p, favorite: !p.favorite } : p)));
-  const moveToTrash = (id: string) => setItems((prev) => prev.map((p) => (p.id === id ? { ...p, trashed: true, favorite: false } : p)));
-  const restoreFromTrash = (id: string) => setItems((prev) => prev.map((p) => (p.id === id ? { ...p, trashed: false } : p)));
-
 
   // Auth/Logout handlers
   const handleLogout = () => {
@@ -71,7 +68,7 @@ export default function PhotoCloud() {
   };
 
   // Helper function to load thumbnail as a data URL (simulating fetching the binary data)
-  const loadThumbnail = async (apiUrl: string) => {
+  const loadAsset = async (apiUrl: string) => {
 
     const accessToken = localStorage.getItem("accessToken");
 
@@ -79,7 +76,6 @@ export default function PhotoCloud() {
       method: "GET",
       headers: {
         "Authorization": `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
       },
     });
 
@@ -99,6 +95,81 @@ export default function PhotoCloud() {
 
     return blobBase64
   }
+
+  const moveToTrash = async (id: string) => {
+    const accessToken = localStorage.getItem("accessToken");
+    if (!accessToken) return;
+    setError(null);
+
+    try {
+  
+      const apiUrl = `${API_BASE_URL}/api/v1/storage/soft-delete/${id}`;
+      const response = await fetch(apiUrl, {
+        method: "DELETE", 
+        headers: {
+          "Authorization": `Bearer ${accessToken}`,
+        },
+      });
+
+      if (!response.ok) {
+         if (response.status === 404) {
+             throw new Error("Photo not found or access denied.");
+         }
+         throw new Error(`Failed to move to trash: ${response.statusText}`);
+      }
+      
+      setItems((prev) => 
+        prev.map((p) => (
+            p.id === id ? { ...p, trashed: true, favorite: false } : p
+        ))
+      );
+      
+    }
+    
+    catch (e) {
+      setError(e instanceof Error ? e.message : "An unknown error occurred while moving to trash.");
+    }
+
+  };
+
+  const restoreFromTrash = async (id: string) => {
+    const accessToken = localStorage.getItem("accessToken");
+    if (!accessToken) return;
+    setError(null);
+
+    try {
+      
+      const apiUrl = `${API_BASE_URL}/api/v1/storage/restore/${id}`;
+      const response = await fetch(apiUrl, {
+        method: "POST", 
+        headers: {
+          "Authorization": `Bearer ${accessToken}`,
+        },
+      });
+
+      if (!response.ok) {
+         if (response.status === 404) {
+             throw new Error("Photo not found or access denied.");
+         }
+         throw new Error(`Failed to restore photo: ${response.statusText}`);
+      }
+      
+      // Update local state: move item out of trash (trashed=false)
+      setItems((prev) => 
+        prev.map((p) => (
+            p.id === id ? { ...p, trashed: false } : p
+        ))
+      );
+
+    }
+    
+    catch (e) {
+      setError(e instanceof Error ? e.message : "An unknown error occurred while restoring.");
+    }
+    
+  };
+
+  const toggleFavorite = (id: string) => setItems((prev) => prev.map((p) => (p.id === id ? { ...p, favorite: !p.favorite } : p)));
 
   // --- useEffect for initial auth check and token handling ---
   useEffect(() => {
@@ -131,72 +202,80 @@ export default function PhotoCloud() {
 
 
   // --- useEffect for fetching photos ---
-  useEffect(() => {
-    const fetchPhotos = async () => {
-      // Only proceed if authenticated
-      if (!isAuthenticated) return;
+  const fetchPhotos = useCallback(async () => {
+    if (!isAuthenticated) return;
 
-      setIsLoading(true);
-      setError(null);
+    setIsLoading(true);
+    setError(null);
+    
+    const accessToken = localStorage.getItem("accessToken");
+    if (!accessToken) {
+      setError("Authentication token not found. Please log in.");
+      setIsLoading(false);
+      return;
+    }
+
+    const galleryPromise = fetch(`${API_BASE_URL}/api/v1/storage/gallery`, {
+      headers: { "Authorization": `Bearer ${accessToken}` },
+    }).then(res => res.json());
+
+    const trashPromise = fetch(`${API_BASE_URL}/api/v1/storage/trash`, {
+      headers: { "Authorization": `Bearer ${accessToken}` },
+    }).then(res => res.json());
+
+    try {
+
+      const [galleryData, trashData] = await Promise.all([galleryPromise, trashPromise]);
       
-      const accessToken = localStorage.getItem("accessToken");
-      if (!accessToken) {
-        setError("Authentication token not found. Please log in.");
-        setIsLoading(false);
-        return;
-      }
+      // Check for errors in fetch responses
+      if (galleryData.detail) throw new Error(`Gallery fetch failed: ${galleryData.detail}`);
+      if (trashData.detail) throw new Error(`Trash fetch failed: ${trashData.detail}`);
 
-      // NOTE: Replace 'http://localhost:8000' with your actual API base URL.
-      const API_BASE_URL = 'http://localhost:8000'; 
-      const apiUrl = `${API_BASE_URL}/api/v1/storage/gallery`;
-
-      try {
-        const response = await fetch(apiUrl, {
-          method: "GET",
-          headers: {
-            "Authorization": `Bearer ${accessToken}`,
-            "Content-Type": "application/json",
-          },
-        });
-
-        if (!response.ok) {
-          if (response.status === 401) {
-             router.push('/login'); 
-          }
-          throw new Error(`Failed to fetch photos: ${response.statusText}`);
+      // Helper to process and load assets
+      const processItems = async (data: PhotoItem[]): Promise<GalleryItem[]> => {
+        if (!Array.isArray(data)) {
+            console.error("Received non-array data from API:", data);
+            return [];
         }
-
-        const data: PhotoItem[] = await response.json();
         
-        // This is where we fetch the actual thumbnail and full image as base64 URLs
         const formattedItemsPromises = data.map(async (item) => ({
             id: item.id,
             title: item.caption || item.filename,
             date: new Date(item.upload_date).toLocaleDateString(),
-            size: 'N/A', // Update size to be read from PhotoItem if available
-            src: await loadThumbnail(`${API_BASE_URL}/api/v1${item.file_url}`),
-            thumbnail: await loadThumbnail(`${API_BASE_URL}/api/v1${item.thumbnail_url}`),
+            size: 'N/A', 
+            src: await loadAsset(`${API_BASE_URL}/api/v1${item.file_url}`),
+            thumbnail: await loadAsset(`${API_BASE_URL}/api/v1${item.thumbnail_url}`),
             preview: false,
-            trashed: false,
-            favorite: false,
+            // Map the backend's 'is_deleted' flag to the frontend's 'trashed' status
+            trashed: item.is_deleted, 
+            favorite: false, // Default or fetch/manage separately
         }));
-        
-        const formattedItems = await Promise.all(formattedItemsPromises);
+        return Promise.all(formattedItemsPromises);
+      };
 
-        setItems(formattedItems);
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "An unknown error occurred.");
-      } finally {
-        setIsLoading(false);
-      }
-    };
+      const galleryItems = await processItems(galleryData);
+      const trashedItems = await processItems(trashData);
+      
+      // Merge all items into a single state array
+      setItems([...galleryItems, ...trashedItems]);
+      
+    }
+    
+    catch (e) {
+      setError(e instanceof Error ? e.message : "An unknown error occurred while fetching photos.");
+    } 
+    
+    finally {
+      setIsLoading(false);
+    }
 
+  }, [isAuthenticated, router]);
+
+  useEffect(() => {
     if (isAuthenticated) {
         fetchPhotos();
     }
-    
-  }, [isAuthenticated, router]);
-
+  }, [isAuthenticated, fetchPhotos]);
 
   // --- Conditional Renders ---
   if (isLoading) {
@@ -249,13 +328,27 @@ export default function PhotoCloud() {
                 p={p} 
                 mode="trash" 
                 onPreview={(id: string) => setPreviewId(id)} 
-                onRestore={restoreFromTrash} 
+                onRestore={restoreFromTrash} // 🔑 Connected to the new restore function
+                // onDeletePermanent={deletePermanent} function would go here
               />
             ))}
             {visiblePhotos.length === 0 && (
               <div className="col-span-full">
                 <EmptyState title="Trash is empty" subtitle="Deleted items will appear here for 30 days." />
               </div>
+            )}
+            
+            {/* 🔑 Placeholder for future "Clear Trash" button */}
+            {visiblePhotos.length > 0 && (
+                <div className="col-span-full pt-4 text-center">
+                    <button 
+                        className="rounded-xl bg-red-600 px-4 py-2 text-sm font-medium text-white shadow-md transition hover:bg-red-700"
+                        // ✅ Replaced alert() with a console log/placeholder for modal UI
+                        onClick={() => console.log("Future feature: This will permanently delete all items in trash.")}
+                    >
+                        Clear Trash Permanently
+                    </button>
+                </div>
             )}
           </section>
         );

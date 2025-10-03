@@ -8,6 +8,7 @@ export interface PhotoItem {
   file_url: string; // URL to the original file
   thumbnail_url: string; // URL to the thumbnail
   exif_data: Record<string, any> | null;
+  is_deleted: boolean;
 }
 
 export interface GalleryItem {

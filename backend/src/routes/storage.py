@@ -43,6 +43,7 @@ class PhotoGalleryItem(BaseModel):
     caption: Optional[str] = None
     upload_date: datetime.datetime
     file_url: str
+    is_deleted: bool 
     thumbnail_url: str # Placeholder for future thumbnail feature
     exif_data: Optional[dict[str, Any]] = None
 
@@ -119,6 +120,42 @@ def extract_exif_data(file_content) -> Optional[dict[str, any]]:
     finally:
         # 5. Reset file pointer again for the upcoming MinIO upload thread
         file_content.seek(0)
+
+
+def _process_photo_record(record) -> PhotoGalleryItem:
+
+    """Helper to convert a DB record into a PhotoGalleryItem."""
+
+    exif_data_from_db = record["exif_data"]
+    parsed_exif_data = None
+    
+    # Logic to handle JSONB/JSON string conversion
+    if isinstance(exif_data_from_db, str):
+        try:
+            parsed_exif_data = json.loads(exif_data_from_db)
+        except json.JSONDecodeError:
+            print(f"Error decoding EXIF data string for photo ID {record['id']}")
+            parsed_exif_data = None
+    elif isinstance(exif_data_from_db, dict) or exif_data_from_db is None:
+        parsed_exif_data = exif_data_from_db
+    else:
+         parsed_exif_data = dict(exif_data_from_db) if exif_data_from_db is not None else None
+
+
+    object_key = record["file_path"]
+    file_url = f"/storage/fetch/{record['id']}" 
+    thumbnail_url = f"/storage/fetch/thumbnail/{record['id']}" 
+
+    return PhotoGalleryItem(
+        id=record["id"],
+        filename=record["filename"],
+        caption=record["caption"],
+        upload_date=record["upload_date"],
+        file_url=file_url,
+        thumbnail_url=thumbnail_url,
+        exif_data=parsed_exif_data,
+        is_deleted=record["is_deleted"] # 🔑 Include soft-delete status
+    )
 
 
 def get_object_sync(object_key: str) -> Generator[bytes, None, None]:
@@ -271,7 +308,7 @@ async def fetch_photo(
     query = """
         SELECT file_path, filename
         FROM photos
-        WHERE id = :photo_id AND user_id = :user_id AND is_deleted = FALSE
+        WHERE id = :photo_id AND user_id = :user_id
     """
     values = {"photo_id": photo_id, "user_id": user_id}
     photo_data = await database.fetch_one(query=query, values=values)
@@ -382,6 +419,52 @@ async def delete_photo(
         )
     
 
+@storage_router.delete("/soft-delete/{photo_id}")
+async def soft_delete_photo(
+    photo_id: uuid.UUID,
+    user_id: Annotated[uuid.UUID, Depends(get_uid)],
+):
+    """
+    Performs a soft delete on a photo by setting the 'is_deleted' flag to TRUE 
+    in the database, but does not delete the file from MinIO.
+    """
+    
+    select_query = """
+        SELECT is_deleted
+        FROM photos
+        WHERE id = :photo_id AND user_id = :user_id
+    """
+    
+    values = {"photo_id": photo_id, "user_id": user_id}
+    photo_data = await database.fetch_one(query=select_query, values=values)
+
+    if not photo_data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Photo not found or access denied."
+        )
+
+    if photo_data["is_deleted"]:
+        return {"message": f"Photo {photo_id} is already soft-deleted."}
+
+    try:
+        update_query = """
+            UPDATE photos
+            SET is_deleted = TRUE
+            WHERE id = :photo_id AND user_id = :user_id
+        """
+        await database.execute(query=update_query, values={"photo_id": photo_id, "user_id": user_id})
+
+        return {"message": f"Photo {photo_id} soft-deleted successfully."}
+        
+    except Exception as e:
+        print(f"Error during soft delete operation: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to perform soft delete on photo metadata."
+        )
+    
+
 @storage_router.get("/fetch/thumbnail/{photo_id}")
 async def fetch_thumbnail( # 🔑 NEW FUNCTION
     photo_id: uuid.UUID,
@@ -435,7 +518,7 @@ async def fetch_all_photos(
 
     # 1. QUERY DATABASE FOR PHOTO METADATA WITH PAGINATION
     query = """
-        SELECT id, filename, caption, upload_date, file_path, exif_data
+        SELECT id, filename, file_path, caption, upload_date, file_path, exif_data, is_deleted
         FROM photos
         WHERE user_id = :user_id AND is_deleted = FALSE
         ORDER BY upload_date DESC
@@ -448,47 +531,117 @@ async def fetch_all_photos(
     }
     
     photo_records = await database.fetch_all(query=query, values=values)
-    
-    if not photo_records:
-        return []
-
-    # 3. BUILD RESPONSE LIST
-    gallery_items: list[PhotoGalleryItem] = []
-    for record in photo_records:
-        
-        # 🔑 FIX: Handle JSONB data coming back as a string (if the DB driver requires it)
-        exif_data_from_db = record["exif_data"]
-        parsed_exif_data = None
-        
-        if isinstance(exif_data_from_db, str):
-            try:
-                # Attempt to parse the string back into a dictionary
-                parsed_exif_data = json.loads(exif_data_from_db)
-            except json.JSONDecodeError:
-                print(f"Error decoding EXIF data string for photo ID {record['id']}")
-                parsed_exif_data = None
-        elif isinstance(exif_data_from_db, dict) or exif_data_from_db is None:
-            # Data is already a dict or None (ideal case for JSONB)
-            parsed_exif_data = exif_data_from_db
-        else:
-             # Handles other potential data types returned by the DB (e.g., if it's already an asyncpg Record object)
-             parsed_exif_data = dict(exif_data_from_db) if exif_data_from_db is not None else None
-
-
-        object_key = record["file_path"]
-        file_url = f"/storage/fetch/{record['id']}" 
-        thumbnail_url = f"/storage/fetch/thumbnail/{record['id']}" 
-
-        gallery_items.append(
-            PhotoGalleryItem(
-                id=record["id"],
-                filename=record["filename"],
-                caption=record["caption"],
-                upload_date=record["upload_date"],
-                file_url=file_url,
-                thumbnail_url=thumbnail_url,
-                exif_data=parsed_exif_data,\
-            )
-        )
+    gallery_items = [_process_photo_record(record) for record in photo_records]
         
     return gallery_items
+
+
+@storage_router.get("/trash", response_model=list[PhotoGalleryItem])
+async def fetch_trashed_photos(user_id: Annotated[uuid.UUID, Depends(get_uid)]):
+    """
+    Fetches all SOFT-DELETED photos for the authenticated user (Trash view).
+    """
+    query = """
+        SELECT id, file_path, filename, caption, upload_date, exif_data, is_deleted
+        FROM photos
+        WHERE user_id = :user_id AND is_deleted = TRUE
+        ORDER BY upload_date DESC;
+    """
+
+    records = await database.fetch_all(query=query, values={"user_id": user_id})
+
+    gallery_items = [_process_photo_record(record) for record in records]
+    return gallery_items
+
+
+@storage_router.delete("/soft-delete/{photo_id}")
+async def soft_delete_photo(
+    photo_id: uuid.UUID,
+    user_id: Annotated[uuid.UUID, Depends(get_uid)],
+):
+    """
+    Performs a soft delete on a photo by setting the 'is_deleted' flag to TRUE 
+    in the database, but does not delete the file from MinIO.
+    """
+    
+    # 1. VERIFY OWNERSHIP AND CHECK CURRENT STATUS
+    select_query = """
+        SELECT is_deleted
+        FROM photos
+        WHERE id = :photo_id AND user_id = :user_id
+    """
+    values = {"photo_id": photo_id, "user_id": user_id}
+    photo_data = await database.fetch_one(query=select_query, values=values)
+
+    if not photo_data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Photo not found or access denied."
+        )
+
+    if photo_data["is_deleted"]:
+        return {"message": f"Photo {photo_id} is already soft-deleted."}
+
+    try:
+        # 2. PERFORM SOFT DELETE (UPDATE is_deleted to TRUE)
+        update_query = """
+            UPDATE photos
+            SET is_deleted = TRUE
+            WHERE id = :photo_id AND user_id = :user_id
+        """
+        await database.execute(query=update_query, values={"photo_id": photo_id, "user_id": user_id})
+
+        return {"message": f"Photo {photo_id} soft-deleted successfully."}
+        
+    except Exception as e:
+        print(f"Error during soft delete operation: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to perform soft delete on photo metadata."
+        )
+
+
+@storage_router.post("/restore/{photo_id}")
+async def restore_photo(
+    photo_id: uuid.UUID,
+    user_id: Annotated[uuid.UUID, Depends(get_uid)],
+):
+    """
+    Restores a soft-deleted photo by setting the 'is_deleted' flag to FALSE.
+    """
+    
+    # 1. VERIFY OWNERSHIP AND CHECK CURRENT STATUS
+    select_query = """
+        SELECT is_deleted
+        FROM photos
+        WHERE id = :photo_id AND user_id = :user_id
+    """
+    values = {"photo_id": photo_id, "user_id": user_id}
+    photo_data = await database.fetch_one(query=select_query, values=values)
+
+    if not photo_data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Photo not found or access denied."
+        )
+
+    if not photo_data["is_deleted"]:
+        return {"message": f"Photo {photo_id} is not soft-deleted (already in main gallery)."}
+
+    try:
+        # 2. RESTORE PHOTO (UPDATE is_deleted to FALSE)
+        update_query = """
+            UPDATE photos
+            SET is_deleted = FALSE
+            WHERE id = :photo_id AND user_id = :user_id
+        """
+        await database.execute(query=update_query, values={"photo_id": photo_id, "user_id": user_id})
+
+        return {"message": f"Photo {photo_id} restored successfully."}
+        
+    except Exception as e:
+        print(f"Error during restore operation: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to restore photo metadata."
+        )
