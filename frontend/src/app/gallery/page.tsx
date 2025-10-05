@@ -1,12 +1,12 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react"; // NEW: useRef
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Images,
   Upload as UploadIcon,
-  Album,
+  Album as AlbumIcon,
   Heart,
   Trash2,
   LayoutDashboard,
@@ -17,6 +17,8 @@ import {
   Undo2,
   X,
   Download,
+  Plus,
+  ChevronLeft,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import {
@@ -57,6 +59,14 @@ type ApiCreated = Partial<Photo> & {
   url?: string;
   path?: string;
   image_url?: string;
+};
+
+// NEW: album type
+type Album = {
+  id: number;
+  name: string;
+  photoIds: number[];
+  createdAt: string; // YYYY-MM-DD
 };
 
 // -------------------- Utilities --------------------
@@ -159,8 +169,7 @@ function SidebarNavLink({
 }) {
   const pathname = usePathname();
   const active =
-    pathname === href ||
-    (href !== "/" && pathname.startsWith(href + "/"));
+    pathname === href || (href !== "/" && pathname.startsWith(href + "/"));
 
   return (
     <Link
@@ -237,7 +246,11 @@ function PhotoCard({
                 p.favorite ? "text-red-500" : "text-gray-700"
               }`}
             >
-              <Heart size={16} strokeWidth={2} fill={p.favorite ? "currentColor" : "none"} />
+              <Heart
+                size={16}
+                strokeWidth={2}
+                fill={p.favorite ? "currentColor" : "none"}
+              />
             </button>
           )}
           {mode !== "trash" && (
@@ -287,6 +300,12 @@ function PreviewModal({
   onTrash,
   onRestore,
   inTrash,
+  // NEW: album controls
+  albums,
+  onAddToAlbum,
+  onRemoveFromAlbum,
+  onQuickCreateAndAdd,
+  photoAlbumNames,
 }: {
   photo: Photo;
   meta: { width: number; height: number } | null;
@@ -295,7 +314,15 @@ function PreviewModal({
   onTrash: (id: number) => void;
   onRestore: (id: number) => void;
   inTrash: boolean;
+  albums: Album[];
+  onAddToAlbum: (albumId: number, photoId: number) => void;
+  onRemoveFromAlbum: (albumId: number, photoId: number) => void;
+  onQuickCreateAndAdd: (name: string, photoId: number) => void;
+  photoAlbumNames: string[];
 }) {
+  const [selectedAlbumId, setSelectedAlbumId] = useState<number | "">("");
+  const [newAlbumName, setNewAlbumName] = useState("");
+
   return (
     <div
       className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4"
@@ -361,6 +388,78 @@ function PreviewModal({
             </div>
           </dl>
 
+          {/* NEW: shows which albums contain this photo */}
+          <div className="flex flex-wrap gap-2 text-xs">
+            {photoAlbumNames.length > 0 ? (
+              photoAlbumNames.map((n) => (
+                <span key={n} className="rounded-full bg-gray-100 px-2 py-1 text-gray-700 ring-1 ring-gray-200">
+                  {n}
+                </span>
+              ))
+            ) : (
+              <span className="text-gray-500">This photo is not in any album</span>
+            )}
+          </div>
+
+          {/* NEW: album management */}
+          <div className="mt-2 space-y-2 rounded-lg border border-gray-200 p-3">
+            <div className="text-sm font-medium text-gray-900">Album</div>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <select
+                value={selectedAlbumId}
+                onChange={(e) =>
+                  setSelectedAlbumId(e.target.value ? Number(e.target.value) : "")
+                }
+                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm outline-none"
+              >
+                <option value="">— Select album —</option>
+                {albums.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name} ({a.photoIds.length})
+                  </option>
+                ))}
+              </select>
+              <button
+                disabled={selectedAlbumId === ""}
+                onClick={() => {
+                  if (selectedAlbumId !== "") onAddToAlbum(selectedAlbumId as number, photo.id);
+                }}
+                className="rounded-md bg-blue-600 px-3 py-2 text-sm text-white shadow hover:bg-blue-700 disabled:opacity-50"
+              >
+                Add
+              </button>
+              <button
+                disabled={selectedAlbumId === ""}
+                onClick={() => {
+                  if (selectedAlbumId !== "") onRemoveFromAlbum(selectedAlbumId as number, photo.id);
+                }}
+                className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 shadow-sm hover:bg-gray-50 disabled:opacity-50"
+              >
+                Remove
+              </button>
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <input
+                value={newAlbumName}
+                onChange={(e) => setNewAlbumName(e.target.value)}
+                placeholder="New album name…"
+                className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm outline-none"
+              />
+              <button
+                disabled={!newAlbumName.trim()}
+                onClick={() => {
+                  if (newAlbumName.trim()) {
+                    onQuickCreateAndAdd(newAlbumName.trim(), photo.id);
+                    setNewAlbumName("");
+                  }
+                }}
+                className="inline-flex items-center gap-2 rounded-md bg-green-600 px-3 py-2 text-sm text-white shadow hover:bg-green-700 disabled:opacity-50"
+              >
+                <Plus size={16} /> Create & Add
+              </button>
+            </div>
+          </div>
+
           <div className="mt-auto flex items-center gap-2">
             <button
               onClick={() => onToggleFavorite(photo.id)}
@@ -392,7 +491,47 @@ function PreviewModal({
   );
 }
 
+// -------------------- Album Card (NEW) --------------------
+
+function AlbumCard({
+  album,
+  coverSrc,
+  onOpen,
+}: {
+  album: Album;
+  coverSrc?: string;
+  onOpen: (id: number) => void;
+}) {
+  return (
+    <motion.div
+      whileHover={{ y: -2 }}
+      className="cursor-pointer overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-gray-200"
+      onClick={() => onOpen(album.id)}
+    >
+      <div className="relative aspect-[4/3] w-full bg-gray-100">
+        {coverSrc ? (
+          <img src={coverSrc} alt={album.name} className="h-full w-full object-cover" />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center text-gray-400">
+            <AlbumIcon size={36} />
+          </div>
+        )}
+        <div className="absolute right-2 top-2 rounded-full bg-black/60 px-2 py-1 text-[11px] font-medium text-white backdrop-blur">
+          {album.photoIds.length} photos
+        </div>
+      </div>
+      <div className="px-4 py-3">
+        <div className="text-sm font-medium text-gray-900">{album.name}</div>
+        <div className="text-xs text-gray-500">{album.createdAt}</div>
+      </div>
+    </motion.div>
+  );
+}
+
 // -------------------- Main App --------------------
+
+const INITIAL_BATCH = 12; // NEW: page size for infinite scroll
+const LS_ALBUMS_KEY = "photocloud.albums.v1"; // NEW: persist albums
 
 export default function PhotoCloud() {
   const [view, setView] = useState<ViewType>("photos");
@@ -406,6 +545,14 @@ export default function PhotoCloud() {
   const [title, setTitle] = useState<string>("");
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+
+  // NEW: albums state
+  const [albums, setAlbums] = useState<Album[]>([]);
+  const [selectedAlbumId, setSelectedAlbumId] = useState<number | null>(null);
+
+  // NEW: infinite scroll state
+  const [showCount, setShowCount] = useState(INITIAL_BATCH);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
 
   // API endpoints
   const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL;
@@ -432,6 +579,24 @@ export default function PhotoCloud() {
     };
   }, [API_BASE]);
 
+  // NEW: load albums from localStorage
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(LS_ALBUMS_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as Album[];
+        if (Array.isArray(parsed)) setAlbums(parsed);
+      }
+    } catch {}
+  }, []);
+
+  // NEW: persist albums
+  useEffect(() => {
+    try {
+      localStorage.setItem(LS_ALBUMS_KEY, JSON.stringify(albums));
+    } catch {}
+  }, [albums]);
+
   const toggleFavorite = (id: number) =>
     setPhotos((prev) => prev.map((p) => (p.id === id ? { ...p, favorite: !p.favorite } : p)));
 
@@ -440,6 +605,45 @@ export default function PhotoCloud() {
 
   const restoreFromTrash = (id: number) =>
     setPhotos((prev) => prev.map((p) => (p.id === id ? { ...p, trashed: false } : p)));
+
+  // NEW: album helpers
+  const createAlbum = (name: string) => {
+    const newAlbum: Album = {
+      id: Math.max(0, ...albums.map((a) => a.id)) + 1,
+      name,
+      photoIds: [],
+      createdAt: todayStr(),
+    };
+    setAlbums((prev) => [newAlbum, ...prev]);
+    return newAlbum.id;
+  };
+
+  const addPhotoToAlbum = (albumId: number, photoId: number) => {
+    setAlbums((prev) =>
+      prev.map((a) =>
+        a.id === albumId && !a.photoIds.includes(photoId)
+          ? { ...a, photoIds: [photoId, ...a.photoIds] }
+          : a
+      )
+    );
+  };
+
+  const removePhotoFromAlbum = (albumId: number, photoId: number) => {
+    setAlbums((prev) =>
+      prev.map((a) =>
+        a.id === albumId ? { ...a, photoIds: a.photoIds.filter((id) => id !== photoId) } : a
+      )
+    );
+  };
+
+  const quickCreateAndAdd = (name: string, photoId: number) => {
+    const id = createAlbum(name);
+    addPhotoToAlbum(id, photoId);
+  };
+
+  const getAlbumById = (id: number | null) => albums.find((a) => a.id === id) || null;
+  const photoAlbumNames = (photoId: number) =>
+    albums.filter((a) => a.photoIds.includes(photoId)).map((a) => a.name);
 
   const titleMap: Record<ViewType, string> = {
     photos: "Photos",
@@ -451,18 +655,48 @@ export default function PhotoCloud() {
     settings: "Settings",
   };
 
+  // Filter visible photos by view and query
   const visible = useMemo(() => {
     let list = photos;
     if (view === "favorites") list = list.filter((p) => p.favorite && !p.trashed);
     else if (view === "trash") list = list.filter((p) => p.trashed);
-    else list = list.filter((p) => !p.trashed);
+    else if (view === "albums" && selectedAlbumId) {
+      const album = getAlbumById(selectedAlbumId);
+      const ids = new Set(album?.photoIds ?? []);
+      list = list.filter((p) => ids.has(p.id) && !p.trashed);
+    } else {
+      // photos view
+      list = list.filter((p) => !p.trashed);
+    }
 
-    if (query.trim()) {
+    if (query.trim() && (view === "photos" || view === "favorites" || (view === "albums" && selectedAlbumId))) {
       const q = query.toLowerCase();
       list = list.filter((p) => p.title.toLowerCase().includes(q) || p.date.includes(q));
     }
     return list;
-  }, [photos, view, query]);
+  }, [photos, view, query, selectedAlbumId]);
+
+  // NEW: reset and wire IntersectionObserver for infinite scroll
+  useEffect(() => {
+    setShowCount(INITIAL_BATCH);
+  }, [view, query, photos.length, selectedAlbumId]);
+
+  useEffect(() => {
+    const node = sentinelRef.current;
+    if (!node) return;
+
+    const obs = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          setShowCount((c) => Math.min(c + INITIAL_BATCH, visible.length));
+        }
+      },
+      { root: null, rootMargin: "200px" }
+    );
+
+    obs.observe(node);
+    return () => obs.disconnect();
+  }, [visible.length]);
 
   const openPreview = (id: number) => setPreviewId(id);
   const closePreview = () => {
@@ -529,8 +763,8 @@ export default function PhotoCloud() {
         title: (created.title as string) ?? (title || file.name),
         date: (created.date as string) ?? todayStr(),
         size:
-        (created.size as string) ??
-        (typeof file.size === "number" ? formatBytesToMB(file.size) : "—"),
+          (created.size as string) ??
+          (typeof file.size === "number" ? formatBytesToMB(file.size) : "—"),
         src: srcFromApi,
         preview: true,
         favorite: false,
@@ -554,27 +788,113 @@ export default function PhotoCloud() {
     }
   }
 
+  // -------------------- Renderers --------------------
+
+  function renderPhotoGrid(mode: "photos" | "favorites" | "trash") {
+    const list = visible.slice(0, showCount);
+    return (
+      <>
+        <section className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          {list.map((p) => (
+            <PhotoCard
+              key={p.id}
+              p={p}
+              mode={mode}
+              onPreview={openPreview}
+              onToggleFavorite={toggleFavorite}
+              onTrash={moveToTrash}
+              onRestore={restoreFromTrash}
+            />
+          ))}
+          {list.length === 0 && (
+            <div className="col-span-full text-sm text-gray-500">No photos to show</div>
+          )}
+        </section>
+        {/* NEW: infinite scroll sentinel */}
+        {showCount < visible.length && (
+          <div ref={sentinelRef} className="mt-6 h-10 w-full animate-pulse rounded-lg bg-gray-200/60" />
+        )}
+      </>
+    );
+  }
+
+  function renderAlbums() {
+    // album list view
+    if (!selectedAlbumId) {
+      return (
+        <div className="space-y-6">
+          {/* Create album */}
+          <CreateAlbumBar
+            onCreate={(name) => {
+              const id = createAlbum(name);
+              setSelectedAlbumId(id); // jump into the new album
+            }}
+          />
+
+          {/* Album grid */}
+          <section className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {albums.map((a) => {
+              const cover = photos.find((p) => a.photoIds.includes(p.id) && !p.trashed)?.src;
+              return (
+                <AlbumCard
+                  key={a.id}
+                  album={a}
+                  coverSrc={cover}
+                  onOpen={(id) => setSelectedAlbumId(id)}
+                />
+              );
+            })}
+            {albums.length === 0 && (
+              <div className="col-span-full text-sm text-gray-500">No albums yet — create one above.</div>
+            )}
+          </section>
+        </div>
+      );
+    }
+
+    // album detail view
+    const album = getAlbumById(selectedAlbumId);
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center justify-between gap-3">
+          <button
+            onClick={() => setSelectedAlbumId(null)}
+            className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 shadow-sm hover:bg-gray-50"
+          >
+            <ChevronLeft size={16} /> Back
+          </button>
+          <h2 className="text-lg font-semibold">{album?.name}</h2>
+          <div className="text-sm text-gray-500">{album?.photoIds.length ?? 0} photos</div>
+        </div>
+
+        {/* search only within this album */}
+        <div className="flex w-full items-center gap-2 sm:w-80">
+          <div className="relative flex-1">
+            <SearchIcon
+              size={16}
+              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+            />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search in album..."
+              className="w-full rounded-lg border border-gray-300 bg-white py-2 pl-9 pr-3 text-sm shadow-sm outline-none placeholder:text-gray-400 focus:border-gray-400"
+            />
+          </div>
+        </div>
+
+        {renderPhotoGrid("photos")}
+      </div>
+    );
+  }
+
   function renderContent() {
     switch (view) {
       case "photos":
+        return renderPhotoGrid("photos");
+
       case "favorites":
-        return (
-          <section className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-            {visible.map((p) => (
-              <PhotoCard
-                key={p.id}
-                p={p}
-                mode={view}
-                onPreview={openPreview}
-                onToggleFavorite={toggleFavorite}
-                onTrash={moveToTrash}
-              />
-            ))}
-            {visible.length === 0 && (
-              <div className="col-span-full text-sm text-gray-500">No photos to show</div>
-            )}
-          </section>
-        );
+        return renderPhotoGrid("favorites");
 
       case "upload":
         return (
@@ -652,16 +972,7 @@ export default function PhotoCloud() {
         );
 
       case "trash":
-        return (
-          <section className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-            {visible.map((p) => (
-              <PhotoCard key={p.id} p={p} mode="trash" onRestore={restoreFromTrash} />
-            ))}
-            {visible.length === 0 && (
-              <div className="col-span-full text-sm text-gray-500">Trash is empty</div>
-            )}
-          </section>
-        );
+        return renderPhotoGrid("trash");
 
       case "dashboard":
         // The real dashboard is at /dashboard now.
@@ -687,6 +998,8 @@ export default function PhotoCloud() {
         );
 
       case "albums":
+        return renderAlbums();
+
       case "settings":
         return <div className="text-sm text-gray-500">Coming soon…</div>;
 
@@ -701,11 +1014,11 @@ export default function PhotoCloud() {
       <aside className="w-64 border-r border-gray-200 bg-white p-4">
         <div className="mb-6 text-lg font-semibold">PhotoCloud</div>
         <div className="flex flex-col gap-2">
-          <SidebarLink icon={Images} label="Photos" active={view === "photos"} onClick={() => setView("photos")} />
-          <SidebarLink icon={UploadIcon} label="Upload" active={view === "upload"} onClick={() => setView("upload")} />
-          <SidebarLink icon={Album} label="Albums" active={view === "albums"} onClick={() => setView("albums")} />
-          <SidebarLink icon={Heart} label="Favorites" active={view === "favorites"} onClick={() => setView("favorites")} />
-          <SidebarLink icon={Trash2} label="Trash" active={view === "trash"} onClick={() => setView("trash")} />
+          <SidebarLink icon={Images} label="Photos" active={view === "photos"} onClick={() => { setView("photos"); setSelectedAlbumId(null); }} />
+          <SidebarLink icon={UploadIcon} label="Upload" active={view === "upload"} onClick={() => { setView("upload"); setSelectedAlbumId(null); }} />
+          <SidebarLink icon={AlbumIcon} label="Albums" active={view === "albums"} onClick={() => setView("albums")} />
+          <SidebarLink icon={Heart} label="Favorites" active={view === "favorites"} onClick={() => { setView("favorites"); setSelectedAlbumId(null); }} />
+          <SidebarLink icon={Trash2} label="Trash" active={view === "trash"} onClick={() => { setView("trash"); setSelectedAlbumId(null); }} />
 
           {/* Real route link for Dashboard */}
           <SidebarNavLink icon={LayoutDashboard} label="Dashboard" href="/dashboard" />
@@ -714,15 +1027,17 @@ export default function PhotoCloud() {
             icon={Settings}
             label="Settings"
             active={view === "settings"}
-            onClick={() => setView("settings")}
+            onClick={() => { setView("settings"); setSelectedAlbumId(null); }}
           />
         </div>
       </aside>
 
-      {/* Main content */}
-      <main className="flex-1 p-8">
+      {/* Main content (NEW: make the main column scrollable) */}
+      <main className="flex-1 h-screen overflow-y-auto p-8">
         <header className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <h1 className="text-2xl font-bold">{titleMap[view]}</h1>
+
+          {/* Search only where it makes sense */}
           {(view === "photos" || view === "favorites") && (
             <div className="flex w-full items-center gap-2 sm:w-80">
               <div className="relative flex-1">
@@ -760,10 +1075,44 @@ export default function PhotoCloud() {
                 onTrash={moveToTrash}
                 onRestore={restoreFromTrash}
                 inTrash={inTrash}
+                // NEW: album controls
+                albums={albums}
+                onAddToAlbum={addPhotoToAlbum}
+                onRemoveFromAlbum={removePhotoFromAlbum}
+                onQuickCreateAndAdd={quickCreateAndAdd}
+                photoAlbumNames={photoAlbumNames(p.id)}
               />
             );
           })()}
       </main>
+    </div>
+  );
+}
+
+// -------------------- Create Album Bar (NEW) --------------------
+
+function CreateAlbumBar({ onCreate }: { onCreate: (name: string) => void }) {
+  const [name, setName] = useState("");
+  return (
+    <div className="flex flex-col gap-2 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:flex-row">
+      <input
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        placeholder="New album name…"
+        className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm outline-none"
+      />
+      <button
+        disabled={!name.trim()}
+        onClick={() => {
+          if (name.trim()) {
+            onCreate(name.trim());
+            setName("");
+          }
+        }}
+        className="inline-flex items-center justify-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow hover:bg-blue-700 disabled:opacity-50"
+      >
+        <Plus size={16} /> Create album
+      </button>
     </div>
   );
 }
