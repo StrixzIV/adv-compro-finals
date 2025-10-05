@@ -13,8 +13,8 @@ import {
   Settings,
   Search as SearchIcon,
   Filter,
+  ArrowLeft, // ⬅️ added
 } from "lucide-react";
-import { motion } from "framer-motion";
 import {
   ResponsiveContainer,
   AreaChart,
@@ -24,14 +24,39 @@ import {
   CartesianGrid,
   Tooltip,
   Legend,
-  BarChart,
-  Bar,
   PieChart,
   Pie,
   Cell,
 } from "recharts";
 
-// --- Types shared with your app ---
+// ---------- Utils (fixed) ----------
+function parseMB(size: string | undefined | null): number {
+  if (!size) return 0;
+  const m = String(size).trim().toUpperCase().match(/^([\d.]+)\s*(B|KB|MB|GB)?$/);
+  if (!m) return 0;
+  const value = parseFloat(m[1]);
+  const unit = m[2] || "MB";
+  switch (unit) {
+    case "B":
+      return value / (1024 * 1024);
+    case "KB":
+      return value / 1024;
+    case "MB":
+      return value;
+    case "GB":
+      return value * 1024;
+    default:
+      return value;
+  }
+}
+
+function formatMB(mb: number): string {
+  if (!isFinite(mb)) return "—";
+  if (mb >= 1024) return `${(mb / 1024).toFixed(1)} GB`;
+  return `${mb.toFixed(1)} MB`;
+}
+
+// ---------- Types ----------
 type Photo = {
   id: number;
   title: string;
@@ -43,7 +68,7 @@ type Photo = {
   trashed?: boolean;
 };
 
-// --- Fallback mock data ---
+// ---------- Fallback mock data ----------
 const fallbackPhotos: Photo[] = [
   {
     id: 1,
@@ -60,7 +85,7 @@ const fallbackPhotos: Photo[] = [
     size: "3.8 MB",
     src: "https://images.unsplash.com/photo-1467269204594-9661b134dd2b?q=80&w=1200&auto=format&fit=crop",
   },
-  // more mock data...
+  // ...add more mock photos as you like
 ];
 
 export default function DashboardPage() {
@@ -68,7 +93,7 @@ export default function DashboardPage() {
   const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL;
   const LIST_PATH = "/photos/";
 
-  // Load photos from API (fallback to mock if not configured)
+  // Load photos (fallback to mock)
   useEffect(() => {
     let abort = false;
     const load = async () => {
@@ -88,39 +113,42 @@ export default function DashboardPage() {
     };
   }, [API_BASE]);
 
-  // --- Derived stats & chart data ---
+  // Derived stats & chart data
   const totals = useMemo(() => {
-    const totalPhotos = photos.filter((p) => !p.trashed).length;
-    const totalFavorites = photos.filter((p) => p.favorite && !p.trashed).length;
+    const notTrashed = photos.filter((p) => !p.trashed);
+    const totalPhotos = notTrashed.length;
+    const totalFavorites = notTrashed.filter((p) => p.favorite).length;
 
-    // Disk usage
-    const totalMB = photos
-      .filter((p) => !p.trashed)
-      .reduce((acc, p) => acc + parseMB(p.size), 0);
+    const totalMB = notTrashed.reduce((acc, p) => acc + parseMB(p.size), 0);
 
-    // Uploads per day (for AreaChart)
     const byDate = new Map<string, number>();
-    for (const p of photos) {
-      if (p.trashed) continue;
+    for (const p of notTrashed) {
       byDate.set(p.date, (byDate.get(p.date) ?? 0) + 1);
     }
     const uploadsOverTime = [...byDate.entries()]
       .sort((a, b) => (a[0] < b[0] ? -1 : 1))
-      .map(([date, count]) => ({ date, uploads: count }));
+      .map(([date, uploads]) => ({ date, uploads }));
+
+    // newest date among non-trashed
+    const lastUpdated =
+      notTrashed.length > 0
+        ? [...new Set(notTrashed.map((p) => p.date))].sort().pop() ?? "—"
+        : "—";
 
     return {
       totalPhotos,
       totalFavorites,
       totalMB,
       uploadsOverTime,
+      lastUpdated,
     };
   }, [photos]);
 
-  // --- Fallback storage pie ---
+  // Storage pie (fake videos for demo)
   const storagePie = useMemo(() => {
     const photosMB = totals.totalMB;
-    const videosMB = photosMB * 1.8;
-    const freeMB = Math.max(0, 1024 - (photosMB + videosMB)); 
+    const videosMB = photosMB * 1.8; // demo assumption
+    const freeMB = Math.max(0, 1024 - (photosMB + videosMB)); // assume 1 GB quota
 
     return [
       { name: "Videos", value: videosMB },
@@ -129,12 +157,27 @@ export default function DashboardPage() {
     ];
   }, [totals.totalMB]);
 
-  // Sidebar navigation
-  const SidebarLink = ({ icon: Icon, label, href }: { icon: React.ElementType, label: string, href: string }) => {
+  // Sidebar link
+  const SidebarLink = ({
+    icon: Icon,
+    label,
+    href,
+  }: {
+    icon: React.ElementType;
+    label: string;
+    href: string;
+  }) => {
     const pathname = usePathname();
     const active = pathname === href || (href !== "/" && pathname.startsWith(href + "/"));
     return (
-      <Link href={href} className={`flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm transition ${active ? "bg-gray-900/5 text-gray-900 shadow-sm" : "text-gray-600 hover:bg-gray-900/5 hover:text-gray-900"}`}>
+      <Link
+        href={href}
+        className={`flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm transition ${
+          active
+            ? "bg-gray-900/5 text-gray-900 shadow-sm"
+            : "text-gray-600 hover:bg-gray-900/5 hover:text-gray-900"
+        }`}
+      >
         <Icon size={18} />
         <span>{label}</span>
       </Link>
@@ -157,21 +200,34 @@ export default function DashboardPage() {
         </div>
       </aside>
 
-      {/* Main content */}
+      {/* Main */}
       <main className="flex-1 p-8">
         <header className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <h1 className="text-2xl font-bold">Dashboard</h1>
+          <div className="flex items-center gap-3">
+            {/* Back to Gallery button */}
+            <Link
+              href="/photos" // change to "/" if your gallery lives at root
+              className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 shadow-sm hover:bg-gray-50"
+            >
+              <ArrowLeft size={16} /> Back to Gallery
+            </Link>
+            <h1 className="text-2xl font-bold">Dashboard</h1>
+          </div>
         </header>
 
         {/* Stat Cards */}
         <section className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200">
             <div className="text-xs text-gray-500">Total photos</div>
-            <div className="mt-1 text-2xl font-semibold">{totals.totalPhotos.toLocaleString()}</div>
+            <div className="mt-1 text-2xl font-semibold">
+              {totals.totalPhotos.toLocaleString()}
+            </div>
           </div>
           <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200">
             <div className="text-xs text-gray-500">Favorites</div>
-            <div className="mt-1 text-2xl font-semibold">{totals.totalFavorites.toLocaleString()}</div>
+            <div className="mt-1 text-2xl font-semibold">
+              {totals.totalFavorites.toLocaleString()}
+            </div>
           </div>
           <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200">
             <div className="text-xs text-gray-500">Disk usage (approx.)</div>
@@ -179,15 +235,13 @@ export default function DashboardPage() {
           </div>
           <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-gray-200">
             <div className="text-xs text-gray-500">Last updated</div>
-            <div className="mt-1 text-2xl font-semibold">
-              {photos.length ? photos[0].date : "—"}
-            </div>
+            <div className="mt-1 text-2xl font-semibold">{totals.lastUpdated}</div>
           </div>
         </section>
 
-        {/* Charts Row */}
+        {/* Charts */}
         <section className="grid gap-6 lg:grid-cols-2">
-          {/* Uploads Over Time */}
+          {/* Uploads over time */}
           <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-200">
             <h2 className="mb-4 text-lg font-semibold">Photo uploads over time</h2>
             <ResponsiveContainer width="100%" height={280}>
@@ -202,7 +256,7 @@ export default function DashboardPage() {
             </ResponsiveContainer>
           </div>
 
-          {/* Storage Distribution */}
+          {/* Storage distribution */}
           <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-200">
             <h2 className="mb-4 text-lg font-semibold">Storage distribution</h2>
             <ResponsiveContainer width="100%" height={280}>
