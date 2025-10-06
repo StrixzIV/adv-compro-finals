@@ -29,7 +29,8 @@ CREATE TABLE IF NOT EXISTS photos (
     caption TEXT,
     upload_date TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     exif_data JSONB,
-    is_deleted BOOLEAN DEFAULT FALSE
+    is_deleted BOOLEAN DEFAULT FALSE,
+    is_favorite BOOLEAN DEFAULT FALSE
 );
 
 -- Indexes

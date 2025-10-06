@@ -44,6 +44,7 @@ class PhotoGalleryItem(BaseModel):
     upload_date: datetime.datetime
     file_url: str
     is_deleted: bool 
+    is_favorite: bool 
     thumbnail_url: str # Placeholder for future thumbnail feature
     exif_data: Optional[dict[str, Any]] = None
     size_bytes: int
@@ -158,6 +159,7 @@ def _process_photo_record(record) -> PhotoGalleryItem:
         thumbnail_url=thumbnail_url,
         exif_data=parsed_exif_data,
         is_deleted=record["is_deleted"], # 🔑 Include soft-delete status
+        is_favorite=record["is_favorite"],
         size_bytes=stat.size
     )
 
@@ -608,7 +610,7 @@ async def fetch_all_photos(
 
     # 1. QUERY DATABASE FOR PHOTO METADATA WITH PAGINATION
     query = """
-        SELECT id, filename, file_path, caption, upload_date, file_path, exif_data, is_deleted
+        SELECT id, filename, file_path, caption, upload_date, file_path, exif_data, is_deleted, is_favorite
         FROM photos
         WHERE user_id = :user_id AND is_deleted = FALSE
         ORDER BY upload_date DESC
@@ -735,3 +737,79 @@ async def restore_photo(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to restore photo metadata."
         )
+
+
+@storage_router.get("/favorites", response_model=list[PhotoGalleryItem])
+async def list_favorite_photos(
+    user_id: Annotated[uuid.UUID, Depends(get_uid)],
+):
+    """
+    Retrieves all photos marked as favorite by the user.
+    """
+    query = """
+        SELECT 
+            id, filename, caption, upload_date, file_path, 
+            exif_data, is_deleted, is_favorite,
+            COALESCE(exif_data->>'size_bytes', '0')::int as size_bytes
+        FROM photos
+        WHERE user_id = :user_id AND is_favorite = TRUE AND is_deleted = FALSE
+        ORDER BY upload_date DESC
+    """
+    photos = await database.fetch_all(query=query, values={"user_id": user_id})
+
+    if not photos:
+        return []
+
+    return [_process_photo_record(dict(photo)) for photo in photos]
+
+
+@storage_router.post("/favorite/{photo_id}", status_code=status.HTTP_200_OK)
+async def mark_photo_as_favorite(
+    photo_id: uuid.UUID,
+    user_id: Annotated[uuid.UUID, Depends(get_uid)],
+):
+    """
+    Marks a specific photo as a favorite by setting is_favorite=TRUE.
+    """
+    update_query = """
+        UPDATE photos
+        SET is_favorite = TRUE
+        WHERE id = :photo_id AND user_id = :user_id
+        RETURNING id
+    """
+    values = {"photo_id": photo_id, "user_id": user_id}
+    result = await database.fetch_one(query=update_query, values=values)
+    
+    if not result:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Photo not found or access denied."
+        )
+    
+    return {"message": f"Photo {photo_id} marked as favorite."}
+
+
+@storage_router.delete("/favorite/{photo_id}", status_code=status.HTTP_200_OK)
+async def unmark_photo_as_favorite(
+    photo_id: uuid.UUID,
+    user_id: Annotated[uuid.UUID, Depends(get_uid)],
+):
+    """
+    Removes the favorite mark from a specific photo by setting is_favorite=FALSE.
+    """
+    update_query = """
+        UPDATE photos
+        SET is_favorite = FALSE
+        WHERE id = :photo_id AND user_id = :user_id
+        RETURNING id
+    """
+    values = {"photo_id": photo_id, "user_id": user_id}
+    result = await database.fetch_one(query=update_query, values=values)
+    
+    if not result:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Photo not found or access denied."
+        )
+
+    return {"message": f"Photo {photo_id} unmarked as favorite."}

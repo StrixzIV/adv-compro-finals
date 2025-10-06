@@ -41,7 +41,8 @@ export default function PhotoCard({ p, mode = "photos", onPreview, onToggleFavor
               aria-label={p.favorite ? "Unfavorite" : "Add to favorites"}
               onClick={(e) => {
                 e.stopPropagation();
-                onToggleFavorite?.(p.id);
+                onToggleFavorite?.(p.id, p.favorite ?? false);
+                p.favorite = !p.favorite;
               }}
               className={`rounded-full bg-white/90 p-2 shadow-sm ring-1 ring-gray-200 hover:bg-white ${
                 p.favorite ? "text-red-500" : "text-gray-700"

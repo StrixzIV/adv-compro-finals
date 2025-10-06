@@ -8,6 +8,7 @@ export interface PhotoItem {
   file_url: string; // URL to the original file
   thumbnail_url: string; // URL to the thumbnail
   exif_data: Record<string, any> | null;
+  is_favorite: boolean;
   is_deleted: boolean;
   size_bytes: number;
 }
@@ -51,7 +52,7 @@ export type PhotoCardProps = {
   p: Photo;
   mode?: "photos" | "favorites" | "trash";
   onPreview?: (id: string) => void;
-  onToggleFavorite?: (id: string) => void;
+  onToggleFavorite?: (id: string, is_favorite: boolean) => void;
   onTrash?: (id: string) => void;
   onRestore?: (id: string) => void;
   onDeletePermanent?: (id: string) => void;

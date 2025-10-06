@@ -259,7 +259,47 @@ export default function PhotoCloud() {
     }
   }
 
-  const toggleFavorite = (id: string) => setItems((prev) => prev.map((p) => (p.id === id ? { ...p, favorite: !p.favorite } : p)));
+  const toggleFavoriteStatus = useCallback(async (photoId: string, isCurrentlyFavorite: boolean) => {
+    
+    const token = localStorage.getItem("accessToken");
+    
+    if (!token) return;
+
+    setError(null);
+
+    const method = isCurrentlyFavorite ? 'DELETE' : 'POST'; 
+    const url = `${API_BASE_URL}/api/v1/storage/favorite/${photoId}`;
+
+    setItems(prevItems => prevItems.map(item => 
+        item.id === photoId ? { ...item, is_favorite: !isCurrentlyFavorite } : item
+    ));
+
+    try {
+        const response = await fetch(url, {
+            method: method,
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+            },
+        });
+
+        if (!response.ok) {
+            // Revert optimistic update if API call fails
+            setItems(prevItems => prevItems.map(item => 
+                item.id === photoId ? { ...item, is_favorite: isCurrentlyFavorite } : item
+            ));
+            
+            const errorData = await response.json();
+            throw new Error(errorData.detail || `Failed to toggle favorite status: ${response.status}`);
+        }
+
+    } catch (err: any) {
+        console.error("Toggle favorite error:", err);
+        setError(err.message || "Failed to update favorite status.");
+        // Re-fetch data to ensure synchronization
+        fetchPhotos(); 
+    }
+  }, [router]);
 
   // --- useEffect for initial auth check and token handling ---
   useEffect(() => {
@@ -336,9 +376,8 @@ export default function PhotoCloud() {
             src: await loadAsset(`${API_BASE_URL}/api/v1${item.file_url}`),
             thumbnail: await loadAsset(`${API_BASE_URL}/api/v1${item.thumbnail_url}`),
             preview: false,
-            // Map the backend's 'is_deleted' flag to the frontend's 'trashed' status
+            favorite: item.is_favorite,
             trashed: item.is_deleted, 
-            favorite: false, // Default or fetch/manage separately
         }));
         return Promise.all(formattedItemsPromises);
       };
@@ -389,7 +428,7 @@ export default function PhotoCloud() {
                 p={p} 
                 mode={view} 
                 onPreview={(id: string) => setPreviewId(id)} 
-                onToggleFavorite={toggleFavorite} 
+                onToggleFavorite={toggleFavoriteStatus} 
                 onTrash={moveToTrash} 
               />
             ))}
