@@ -50,12 +50,13 @@ export type SidebarLinkProps = {
 
 export type PhotoCardProps = {
   p: Photo;
-  mode?: "photos" | "favorites" | "trash";
+  mode?: "photos" | "favorites" | "trash" | "album_detail";
   onPreview?: (id: string) => void;
   onToggleFavorite?: (id: string, is_favorite: boolean) => void;
   onTrash?: (id: string) => void;
   onRestore?: (id: string) => void;
   onDeletePermanent?: (id: string) => void;
+  onRemoveFromAlbum?: (id: string) => void;
 };
 
 export type PreviewModalProps = {

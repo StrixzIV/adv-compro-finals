@@ -1,102 +1,109 @@
 import React from "react";
 import { motion } from "framer-motion";
-import { Eye, Heart, Trash2, Undo2 } from "lucide-react";
+import { Repeat2, Heart, Trash2, XCircle, FolderMinus } from "lucide-react";
 import { PhotoCardProps } from "../interfaces/types";
 
-export default function PhotoCard({ p, mode = "photos", onPreview, onToggleFavorite, onTrash, onRestore, onDeletePermanent }: PhotoCardProps) {
-  return (
-    <motion.div
-      whileHover={{ y: -2 }}
-      className="group relative overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-gray-200"
-      onClick={() => onPreview?.(p.id)}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") onPreview?.(p.id);
-      }}
-    >
-      <div className="relative aspect-[4/3] w-full">
-        <img src={p.thumbnail} alt={p.title} className="h-full w-full object-cover" loading="lazy" />
+export default function PhotoCard({ p, mode = "photos", onPreview, onToggleFavorite, onTrash, onRestore, onDeletePermanent, onRemoveFromAlbum }: PhotoCardProps) {
+  const isFavorite = p.favorite;
 
-        {/* file size badge */}
-        <div className="absolute right-2 top-2 rounded-full bg-black/60 px-2 py-1 text-[11px] font-medium text-white backdrop-blur">
-          {p.size}
-        </div>
+    // Handler to prevent preview click when clicking an action button
+    const handleActionClick = (handler: ((id: string) => void) | ((id: string, isFav: boolean) => void), ...args: any[]) => (e: React.MouseEvent) => {
+        e.stopPropagation();
+        (handler as any)(...args);
+    };
 
-        {/* preview overlay */}
-        <div
-          className={`pointer-events-none absolute inset-0 grid place-items-center transition ${
-            p.preview ? "opacity-100" : "opacity-0 group-hover:opacity-100"
-          } bg-black/0 group-hover:bg-black/20`}
+    const renderActionButtons = () => {
+        // --- 1. Album Detail Mode: Remove Photo from Album ---
+        if (mode === 'album_detail') {
+            return (
+                <button 
+                    onClick={handleActionClick(onRemoveFromAlbum!, p.id)}
+                    className="p-1 rounded-full bg-red-600 text-white shadow-lg hover:bg-red-700 transition"
+                    title="Remove from Album"
+                >
+                    <FolderMinus size={18} /> 
+                </button>
+            );
+        }
+
+        // --- 2. Trash Mode: Restore or Delete Permanently ---
+        if (mode === 'trash') {
+            return (
+                <div className="flex space-x-2">
+                    <button 
+                        onClick={handleActionClick(onRestore!, p.id)}
+                        className="p-1 rounded-full bg-green-500 text-white shadow-lg hover:bg-green-600 transition"
+                        title="Restore"
+                    >
+                        <Repeat2 size={18} />
+                    </button>
+                    <button 
+                        onClick={handleActionClick(onDeletePermanent!, p.id)}
+                        className="p-1 rounded-full bg-gray-900 text-white shadow-lg hover:bg-gray-700 transition"
+                        title="Delete Permanently"
+                    >
+                        <XCircle size={18} />
+                    </button>
+                </div>
+            );
+        }
+
+        // --- 3. Photos / Favorites Modes: Favorite and Trash ---
+        // This covers 'photos' and 'favorites' modes.
+        const favoriteButton = (
+            <button 
+                onClick={handleActionClick(onToggleFavorite!, p.id, isFavorite)}
+                className={`p-1 rounded-full ${isFavorite ? 'bg-red-500 text-white' : 'bg-white text-red-500'} shadow-lg hover:opacity-80 transition`}
+                title={isFavorite ? "Unfavorite" : "Favorite"}
+            >
+                <Heart size={18} fill={isFavorite ? 'currentColor' : 'none'} />
+            </button>
+        );
+
+        const trashButton = (
+            <button 
+                onClick={handleActionClick(onTrash!, p.id)}
+                className="p-1 rounded-full bg-white text-gray-900 shadow-lg hover:bg-gray-200 transition"
+                title="Move to Trash"
+            >
+                <Trash2 size={18} />
+            </button>
+        );
+
+        return (
+            <div className="flex space-x-2">
+                {favoriteButton}
+                {trashButton}
+            </div>
+        );
+    };
+
+    return (
+        <div 
+            className="group relative aspect-square w-full cursor-pointer overflow-hidden rounded-2xl bg-white shadow-lg transition-shadow hover:shadow-xl"
+            onClick={() => onPreview && onPreview(p.id)}
         >
-          <span className="flex items-center gap-2 rounded-full bg-white/90 px-3 py-1 text-xs font-medium shadow-sm">
-            <Eye size={14} /> Preview
-          </span>
-        </div>
+            {/* Image */}
+            <img 
+                src={p.thumbnail} 
+                alt={p.title} 
+                className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
+            />
 
-        {/* action buttons */}
-        <div className="absolute bottom-2 right-2 flex items-center gap-2 opacity-0 transition group-hover:opacity-100">
-          {(mode === "photos" || mode === "favorites") && (
-            <button
-              aria-label={p.favorite ? "Unfavorite" : "Add to favorites"}
-              onClick={(e) => {
-                e.stopPropagation();
-                onToggleFavorite?.(p.id, p.favorite ?? false);
-                p.favorite = !p.favorite;
-              }}
-              className={`rounded-full bg-white/90 p-2 shadow-sm ring-1 ring-gray-200 hover:bg-white ${
-                p.favorite ? "text-red-500" : "text-gray-700"
-              }`}
-            >
-              <Heart size={16} strokeWidth={2} fill={p.favorite ? "currentColor" : "none"} />
-            </button>
-          )}
-          {mode !== "trash" && (
-            <button
-              aria-label="Move to Trash"
-              onClick={(e) => {
-                e.stopPropagation();
-                onTrash?.(p.id);
-              }}
-              className="rounded-full bg-white/90 p-2 text-gray-700 shadow-sm ring-1 ring-gray-200 hover:bg-white"
-            >
-              <Trash2 size={16} />
-            </button>
-          )}
-          {mode === "trash" && (
-            <>
-              <button
-                aria-label="Restore"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onRestore?.(p.id);
-                }}
-                className="rounded-full bg-white/90 p-2 text-gray-700 shadow-sm ring-1 ring-gray-200 hover:bg-white"
-              >
-                <Undo2 size={16} />
-              </button>
-              {/* Permanent Delete Button */}
-              <button
-                aria-label="Permanently Delete"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onDeletePermanent?.(p.id);
-                }}
-                className="rounded-full bg-white/90 p-2 text-red-600 shadow-sm ring-1 ring-gray-200 hover:bg-white/95"
-              >
-                <Trash2 size={16} />
-              </button>
-            </>
-          )}
-        </div>
-      </div>
+            {/* Overlay for actions and title */}
+            <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent p-4 opacity-0 transition-opacity duration-300 group-hover:opacity-100">
+                
+                {/* Action Buttons (Top Right) */}
+                <div className="absolute right-4 top-4">
+                    {renderActionButtons()}
+                </div>
 
-      <div className="flex items-center justify-between px-4 py-3">
-        <div>
-          <div className="text-sm font-medium text-gray-900">{p.title}</div>
-          <div className="text-xs text-gray-500">{p.date}</div>
+                {/* Title and Info (Bottom Left) */}
+                <div className="absolute bottom-4 left-4 text-white">
+                    <h3 className="text-sm font-semibold truncate max-w-full">{p.title}</h3>
+                    <p className="text-xs opacity-75">{p.date}</p>
+                </div>
+            </div>
         </div>
-      </div>
-    </motion.div>
-  );
+    );
 }

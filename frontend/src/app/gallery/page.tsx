@@ -276,7 +276,7 @@ export default function PhotoCloud() {
     } finally {
         setIsAlbumDetailLoading(false);
     }
-}, [loadAsset]); 
+  }, [loadAsset]); 
 
   const restoreFromTrash = async (id: string) => {
     const accessToken = localStorage.getItem("accessToken");
@@ -588,6 +588,76 @@ export default function PhotoCloud() {
     }
   }, [fetchAlbums]);
 
+  const handleRemovePhotoFromAlbum = useCallback(async (photoId: string) => {
+    const accessToken = localStorage.getItem("accessToken");
+    if (!accessToken || !activeAlbumId) return;
+
+    // Optimistically update the UI before the API call
+    setAlbumDetail(prevDetail => {
+        if (!prevDetail) return null;
+        return {
+            ...prevDetail,
+            photos: prevDetail.photos.filter(p => p.id !== photoId)
+        };
+    });
+    
+    setAlbumDetailError(null);
+
+    try {
+        // DELETE /api/v1/albums/{album_id}/photos/{photo_id}
+        const apiUrl = `${API_BASE_URL}/api/v1/albums/${activeAlbumId}/photo/${photoId}`;
+        const response = await fetch(apiUrl, {
+            method: 'DELETE',
+            headers: { "Authorization": `Bearer ${accessToken}` },
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || "Failed to remove photo from album.");
+        }
+
+        // Success: UI already updated
+
+    } catch (e) {
+        const errorMessage = e instanceof Error ? e.message : "An unknown error occurred.";
+        setAlbumDetailError(errorMessage);
+        // Re-fetch to restore state if the API failed
+        fetchAlbumDetails(activeAlbumId); 
+    }
+  }, [activeAlbumId, fetchAlbumDetails]);
+
+  const handleDeleteAlbum = useCallback(async () => {
+    const accessToken = localStorage.getItem("accessToken");
+    if (!accessToken || !activeAlbumId) return;
+
+    if (!window.confirm(`Are you sure you want to delete the album "${activeAlbumTitle}"? This cannot be undone.`)) {
+        return;
+    }
+
+    try {
+        // DELETE /api/v1/albums/{album_id}
+        const apiUrl = `${API_BASE_URL}/api/v1/albums/${activeAlbumId}`;
+        const response = await fetch(apiUrl, {
+            method: 'DELETE',
+            headers: { "Authorization": `Bearer ${accessToken}` },
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || "Failed to delete album.");
+        }
+
+        // Success: Clear the active view and refresh the album list
+        setView("albums");
+        setActiveAlbumId(null);
+        setActiveAlbumTitle(null);
+        fetchAlbums(); // Re-fetch the main album list
+
+    } catch (e) {
+        setAlbumDetailError(e instanceof Error ? e.message : "An unknown error occurred while deleting the album.");
+    }
+  }, [activeAlbumId, activeAlbumTitle, fetchAlbums]);
+
   useEffect(() => {
       if (view === "album_detail" && activeAlbumId) {
           fetchAlbumDetails(activeAlbumId);
@@ -681,12 +751,22 @@ export default function PhotoCloud() {
 
       return (
             <div className="space-y-6">
+
                 <button 
                     onClick={() => setView("albums")} 
                     className="text-indigo-600 hover:text-indigo-800 text-sm font-medium flex items-center gap-1"
                 >
                     &larr; Back to Albums
                 </button>
+
+                <button
+                    onClick={handleDeleteAlbum}
+                    className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-red-700"
+                >
+                    <Trash2 size={16} />
+                    Delete Album
+                </button>
+
                 <h2 className="text-3xl font-bold">{activeAlbumTitle}</h2>
                 
                 {albumDetailError && (
@@ -704,8 +784,9 @@ export default function PhotoCloud() {
                               <PhotoCard 
                                   key={p.id} 
                                   p={p} 
-                                  mode="photos" 
-                                  onPreview={(id: string) => setPreviewId(id)} 
+                                  mode="album_detail" 
+                                  onPreview={(id: string) => setPreviewId(id)}
+                                  onRemoveFromAlbum={handleRemovePhotoFromAlbum}
                               />
                           ))
                         ) : (

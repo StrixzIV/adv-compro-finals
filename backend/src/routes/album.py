@@ -195,7 +195,7 @@ async def add_photos_to_album(
     return {"message": f"Attempted to add {len(insert_values)} photos to album {album_id}. Existing photos ignored."}
 
 
-@album_router.delete("/{album_id}/remove-photo/{photo_id}", status_code=status.HTTP_200_OK)
+@album_router.delete("/{album_id}/photo/{photo_id}", status_code=status.HTTP_200_OK)
 async def remove_photo_from_album(
     album_id: uuid.UUID,
     photo_id: uuid.UUID,
