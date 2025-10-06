@@ -16,7 +16,8 @@ import {
   Settings,
   Search,
   Filter,
-  LogOut
+  LogOut,
+  PlusCircle
 } from "lucide-react";
 
 import UploadPanel from "./components/UploadPanel";
@@ -25,8 +26,11 @@ import PhotoCard from "./components/PhotoCard";
 import EmptyState from "./components/EmptyState";
 import PreviewModal from "./components/PreviewModal";
 import DashboardCharts from "./components/DashboardCharts";
+import AlbumCard from "./components/AlbumCard";
+import CreateAlbumModal from "./components/CreateAlbumModal";
+import AddPhotosToAlbumModal from "./components/AddPhotosToAlbumModal";
 
-import { PhotoItem, GalleryItem, ViewType } from "./interfaces/types";
+import { PhotoItem, GalleryItem, ViewType, AlbumListItem, AlbumDetailData } from "./interfaces/types";
 
 const API_BASE_URL = 'http://localhost:8000';
 
@@ -55,11 +59,33 @@ function formatBytes(bytes: number, decimals: number = 2): string {
 export default function PhotoCloud() {
 
   const [view, setView] = useState<ViewType>("photos");
+
   const [items, setItems] = useState<GalleryItem[]>([]);
+  const [albums, setAlbums] = useState<AlbumListItem[]>([]);
+  
   const [previewId, setPreviewId] = useState<string | null>(null);
+  
   const [error, setError] = useState<string | null>(null);
+  
   const [isLoading, setIsLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+
+  const [isCreatingAlbum, setIsCreatingAlbum] = useState(false);
+  const [createAlbumError, setCreateAlbumError] = useState<string | null>(null); 
+  const [isAlbumLoading, setIsAlbumLoading] = useState(false);
+
+  const [isAddPhotosModalOpen, setIsAddPhotosModalOpen] = useState(false);
+  const [albumToEditId, setAlbumToEditId] = useState<string | null>(null);
+  const [addPhotosError, setAddPhotosError] = useState<string | null>(null);
+  const [isAddingPhotos, setIsAddingPhotos] = useState(false);
+
+  const [activeAlbumId, setActiveAlbumId] = useState<string | null>(null);
+  const [activeAlbumTitle, setActiveAlbumTitle] = useState<string | null>(null);
+
+  const [albumDetail, setAlbumDetail] = useState<AlbumDetailData | null>(null);
+  const [isAlbumDetailLoading, setIsAlbumDetailLoading] = useState(false);
+  const [albumDetailError, setAlbumDetailError] = useState<string | null>(null);
+  
   const router = useRouter();
 
   const titleMap: Record<ViewType, string> = {
@@ -70,6 +96,7 @@ export default function PhotoCloud() {
     trash: "Trash",
     dashboard: "Dashboard",
     settings: "Settings",
+    album_detail: "album_detail",
   };
 
   const visiblePhotos = useMemo(() => {
@@ -89,10 +116,55 @@ export default function PhotoCloud() {
     router.push('/login');
   };
 
+  const handleViewAlbum = useCallback((albumId: string, albumTitle: string) => {
+      setActiveAlbumId(albumId);
+      setActiveAlbumTitle(albumTitle);
+      setView("album_detail"); 
+  }, []);
+
+  const handleAddPhotosToAlbum = useCallback(async (albumId: string, photoIds: string[]) => {
+      const accessToken = localStorage.getItem("accessToken");
+      if (!accessToken) return;
+
+      setAddPhotosError(null);
+      setIsAddingPhotos(true);
+
+      try {
+          const apiUrl = `${API_BASE_URL}/api/v1/albums/${albumId}/add-photos`;
+          const response = await fetch(apiUrl, {
+              method: 'POST',
+              headers: {
+                  "Authorization": `Bearer ${accessToken}`,
+                  "Content-Type": "application/json"
+              },
+              body: JSON.stringify({ photo_ids: photoIds }) // Matches the PhotoIdList backend model
+          });
+
+          const data = await response.json();
+
+          if (!response.ok) {
+              throw new Error(data.detail || "Failed to add photos to album.");
+          }
+
+          // Success: Close modal (no need to re-fetch albums, only content changes)
+          setIsAddPhotosModalOpen(false);
+
+          // Optional: Show a success toast/message here.
+
+      } catch (e) {
+          const errorMessage = e instanceof Error ? e.message : "An unknown error occurred.";
+          setAddPhotosError(errorMessage);
+      } finally {
+          setIsAddingPhotos(false);
+      }
+  }, []); 
+
   // Helper function to load thumbnail as a data URL (simulating fetching the binary data)
-  const loadAsset = async (apiUrl: string) => {
+  const loadAsset = useCallback(async (apiUrl: string): Promise<string> => {
 
     const accessToken = localStorage.getItem("accessToken");
+
+    if (!accessToken) return '';
 
     const response = await fetch(apiUrl, {
       method: "GET",
@@ -116,7 +188,7 @@ export default function PhotoCloud() {
     });
 
     return blobBase64
-  }
+  }, []);
 
   const moveToTrash = async (id: string) => {
     const accessToken = localStorage.getItem("accessToken");
@@ -153,6 +225,58 @@ export default function PhotoCloud() {
     }
 
   };
+
+  const fetchAlbumDetails = useCallback(async (albumId: string) => {
+    const accessToken = localStorage.getItem("accessToken");
+    if (!accessToken || !albumId) return;
+
+    setIsAlbumDetailLoading(true);
+    setAlbumDetailError(null);
+
+    try {
+        const apiUrl = `${API_BASE_URL}/api/v1/albums/${albumId}`;
+        const response = await fetch(apiUrl, {
+            headers: { "Authorization": `Bearer ${accessToken}` },
+        });
+
+        const data = await response.json(); // Data structure: { ..., photos: MinimalPhotoData[] }
+
+        if (!response.ok) {
+            throw new Error(data.detail || "Failed to fetch album details.");
+        }
+
+        // 🔑 1. Map the minimal photo data to the full GalleryItem structure
+        const processedPhotosPromises = data.photos.map(async (photo: any) => { 
+             
+             // This explicit construction satisfies the GalleryItem contract
+             const photoData: GalleryItem = {
+                id: photo.id,
+                title: photo.caption || photo.filename,
+                date: new Date(photo.upload_date).toLocaleDateString(),
+                size: "N/A", 
+                src: await loadAsset(`${API_BASE_URL}${photo.file_url}`),
+                thumbnail: await loadAsset(`${API_BASE_URL}${photo.thumbnail_url}`),
+                
+                // CRITICAL: Provide default values for missing GalleryItem properties
+                preview: false,
+                favorite: false, 
+                trashed: false,
+             };
+             return photoData;
+        });
+        
+        const processedPhotos: GalleryItem[] = await Promise.all(processedPhotosPromises);
+
+        // 🔑 2. Set the state. We cast the final object to AlbumDetailData.
+        // The 'photos' property is now the fully processed GalleryItem[] array.
+        setAlbumDetail({ ...data, photos: processedPhotos } as AlbumDetailData); 
+
+    } catch (e) {
+        setAlbumDetailError(e instanceof Error ? e.message : "An unknown error occurred while fetching photos.");
+    } finally {
+        setIsAlbumDetailLoading(false);
+    }
+}, [loadAsset]); 
 
   const restoreFromTrash = async (id: string) => {
     const accessToken = localStorage.getItem("accessToken");
@@ -400,11 +524,86 @@ export default function PhotoCloud() {
 
   }, [isAuthenticated, router]);
 
+  const fetchAlbums = useCallback(async () => {
+    if (!isAuthenticated) return;
+    
+    const accessToken = localStorage.getItem("accessToken");
+    if (!accessToken) return;
+
+    try {
+        const apiUrl = `${API_BASE_URL}/api/v1/albums`;
+        const response = await fetch(apiUrl, {
+            headers: { "Authorization": `Bearer ${accessToken}` },
+        });
+
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.detail || "Failed to fetch albums.");
+        }
+        
+        if (Array.isArray(data)) {
+            setAlbums(data as AlbumListItem[]);
+        }
+
+    } catch (e) {
+        setError(e instanceof Error ? e.message : "An unknown error occurred while fetching albums.");
+    }
+  }, [isAuthenticated]);
+
+  const handleCreateAlbum = useCallback(async (title: string, description: string | null) => {
+
+    const accessToken = localStorage.getItem("accessToken");
+    if (!accessToken) return;
+
+    setCreateAlbumError(null);
+    setIsAlbumLoading(true);
+
+    try {
+        const apiUrl = `${API_BASE_URL}/api/v1/albums`;
+        const response = await fetch(apiUrl, {
+            method: 'POST',
+            headers: { 
+                "Authorization": `Bearer ${accessToken}`,
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ title, description })
+        });
+
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.detail || "Failed to create album.");
+        }
+        
+        // Success: Close modal, refresh album list
+        setIsCreatingAlbum(false);
+        fetchAlbums(); // Re-fetch all albums to show the new one
+
+    } catch (e) {
+        const errorMessage = e instanceof Error ? e.message : "An unknown error occurred.";
+        setCreateAlbumError(errorMessage);
+    } finally {
+        setIsAlbumLoading(false);
+    }
+  }, [fetchAlbums]);
+
+  useEffect(() => {
+      if (view === "album_detail" && activeAlbumId) {
+          fetchAlbumDetails(activeAlbumId);
+      }
+      // Clear detail when leaving the view
+      if (view !== "album_detail") {
+          setAlbumDetail(null);
+      }
+  }, [view, activeAlbumId, fetchAlbumDetails]);
+
   useEffect(() => {
     if (isAuthenticated) {
-        fetchPhotos();
+      fetchPhotos();
+      fetchAlbums();
     }
-  }, [isAuthenticated, fetchPhotos]);
+  }, [isAuthenticated, fetchPhotos, fetchAlbums]);
 
   // --- Conditional Renders ---
   if (isLoading) {
@@ -443,10 +642,80 @@ export default function PhotoCloud() {
         return <UploadPanel />; // Assuming UploadPanel is a separate component
       case "albums":
         return (
-          <section className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            <EmptyState title="No albums yet" subtitle="Create an album to organize your photos." />
-            <EmptyState title="Tip" subtitle="Select photos and add to a new album." />
+          <section className="space-y-6">
+            <div className="flex justify-end">
+                <button 
+                    className="inline-flex items-center gap-2 rounded-xl bg-gray-900 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-gray-700"
+                    onClick={() => {
+                        setIsCreatingAlbum(true); // 🔑 Open the modal
+                        setCreateAlbumError(null); // Clear previous errors
+                    }}
+                >
+                    <PlusCircle size={16} />
+                    Create New Album
+                </button>
+            </div>
+            
+            {albums.length === 0 ? (
+                <EmptyState title="No albums yet" subtitle="Create an album to organize your photos." />
+            ) : (
+                <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+                    {albums.map((album) => (
+                    <AlbumCard 
+                        key={album.id} 
+                        album={album} 
+                        onAddPhotosClick={() => {
+                            setAlbumToEditId(album.id);
+                            setIsAddPhotosModalOpen(true);
+                            setAddPhotosError(null);
+                        }}
+                        onViewAlbumClick={handleViewAlbum}
+                    />
+                ))}
+                </div>
+            )}
           </section>
+        );
+      case "album_detail":
+        if (!activeAlbumId) return null;
+
+      return (
+            <div className="space-y-6">
+                <button 
+                    onClick={() => setView("albums")} 
+                    className="text-indigo-600 hover:text-indigo-800 text-sm font-medium flex items-center gap-1"
+                >
+                    &larr; Back to Albums
+                </button>
+                <h2 className="text-3xl font-bold">{activeAlbumTitle}</h2>
+                
+                {albumDetailError && (
+                    <div className="mt-4 p-4 bg-red-100 border border-red-400 text-red-700 rounded-lg">
+                        <span className="font-medium">Error:</span> {albumDetailError}
+                    </div>
+                )}
+
+                {isAlbumDetailLoading ? (
+                    <div className="p-10 text-center">Loading album photos...</div>
+                ) : (
+                    <section className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+                        {albumDetail && albumDetail.photos.length > 0 ? (
+                          albumDetail.photos.map((p) => (
+                              <PhotoCard 
+                                  key={p.id} 
+                                  p={p} 
+                                  mode="photos" 
+                                  onPreview={(id: string) => setPreviewId(id)} 
+                              />
+                          ))
+                        ) : (
+                            <div className="col-span-full">
+                                <EmptyState title="No photos" subtitle={`This album is empty.`} />
+                            </div>
+                        )}
+                    </section>
+                )}
+            </div>
         );
       case "trash":
         return (
@@ -572,6 +841,24 @@ export default function PhotoCloud() {
           )}
         </main>
       </div>
+
+      <CreateAlbumModal 
+          isOpen={isCreatingAlbum}
+          onClose={() => setIsCreatingAlbum(false)}
+          onCreate={handleCreateAlbum}
+          isLoading={isAlbumLoading}
+          error={createAlbumError}
+      />
+
+      <AddPhotosToAlbumModal
+          isOpen={isAddPhotosModalOpen}
+          onClose={() => setIsAddPhotosModalOpen(false)}
+          albumId={albumToEditId}
+          photos={items} // Use the filtered list of available photos
+          onAdd={handleAddPhotosToAlbum}
+          isLoading={isAddingPhotos}
+          error={addPhotosError}
+      />
 
       {/* Preview modal */}
       <PreviewModal photo={items.find((p) => p.id === previewId)} onClose={() => setPreviewId(null)} />

@@ -39,7 +39,7 @@ export type Photo = {
   trashed?: boolean;
 };
 
-export type ViewType = "photos" | "upload" | "albums" | "favorites" | "trash" | "dashboard" | "settings";
+export type ViewType = "photos" | "upload" | "albums" | "favorites" | "trash" | "dashboard" | "settings" | "album_detail";
 
 export type SidebarLinkProps = {
   icon: React.ComponentType<{ size?: number }>;
@@ -59,6 +59,41 @@ export type PhotoCardProps = {
 };
 
 export type PreviewModalProps = {
-    photo: Photo | undefined;
-    onClose: () => void;
+  photo: Photo | undefined;
+  onClose: () => void;
 };
+
+export type AlbumListItem = {
+  id: string;
+  title: string;
+  description: string | null;
+  created_at: string; // ISO date string
+}
+
+export type AlbumCardProps = {
+  album: AlbumListItem;
+  onAddPhotosClick: (albumId: string) => void;
+  onViewAlbumClick: (albumId: string, albumTitle: string) => void;
+}
+
+export type CreateAlbumModalProps = {
+  isOpen: boolean;
+  onClose: () => void;
+  onCreate: (title: string, description: string | null) => void;
+  isLoading: boolean;
+  error: string | null;
+}
+
+export type AddPhotosToAlbumModalProps = {
+  isOpen: boolean;
+  onClose: () => void;
+  albumId: string | null;
+  photos: GalleryItem[];
+  onAdd: (albumId: string, photoIds: string[]) => void;
+  isLoading: boolean;
+  error: string | null;
+};
+
+export interface AlbumDetailData extends AlbumListItem {
+  photos: GalleryItem[]; 
+}
