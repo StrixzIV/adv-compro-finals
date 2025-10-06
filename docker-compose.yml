@@ -1,6 +1,7 @@
 services:
 
   db:
+    container_name: adv-compro-db
     image: postgres:13
     ports:
       - "5432:5432"
@@ -15,8 +16,8 @@ services:
       - backend_network
 
   pgadmin:
+    container_name: adv-compro-pgadmin
     image: dpage/pgadmin4
-    container_name: pgadmin
     environment:
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
@@ -27,15 +28,48 @@ services:
     networks:
       - backend_network
 
+  frontend:
+    container_name: adv-compro-frontend
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: runtime
+    ports:
+      - "3000:3000"
+    networks:
+      - backend_network
+    restart: unless-stopped
+    depends_on:
+      - db
+      - backend
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    develop:
+      watch:
+        - action: rebuild
+          path:   frontend/src
+
   backend:
+    container_name: adv-compro-backend
     build:
       context: ./backend
     ports:
       - "8000:8000"
-    env_file:
-      - .env
     environment:
-      - DEV=${DEV-}
+      DEV: ${DEV-}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      HOST_URL: ${HOST_URL}
+      FASTAPI_URL: ${FASTAPI_URL}
+      GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID}
+      GOOGLE_OAUTH_CLIENT_SECRETS: ${GOOGLE_OAUTH_CLIENT_SECRETS}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
     volumes:
       - ./backend/src:/var/backend/src:rw
       - ./backend/tools:/var/backend/tools:ro
@@ -46,26 +80,31 @@ services:
     develop:
       watch:
         - action: rebuild
+          path: .env
+        - action: rebuild
           path: backend/Dockerfile
         - action: rebuild
           path: backend/src/pyproject.toml
         - action: rebuild
           path: backend/tools/
 
-  # nextjs:
-  #   build:
-  #     context: ./nextjs
-  #   ports:
-  #     - "3000:3000"
-  #   env_file:
-  #     - .env
-  #   volumes:
-  #     - ./nextjs:/src
-  #     - /src/node_modules # This masks the node_modules directory from the host system and prevents it from being mapped from your local filesystem. The container will manage its own node_modules directory.
-  #   working_dir: /src
-  #   command: npm run dev
-  #   networks:
-  #     - backend_network
+  minio:
+    container_name: minio
+    build:
+      context: ./s3
+      dockerfile: Dockerfile
+    restart: always
+    env_file:
+      - .env
+    networks:
+      - backend_network
+    volumes:
+      - ./minio/:/data/:rw
+    command: server /data --console-address ":9001"
+    expose:
+      - 9000
+    ports:
+      - "9001:9001"
 
 networks:
   backend_network:
