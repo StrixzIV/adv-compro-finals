@@ -6,6 +6,8 @@ import datetime
 
 from PIL import Image
 from PIL.ExifTags import TAGS
+from PIL.TiffImagePlugin import IFDRational
+
 from pydantic import BaseModel
 from typing import Annotated, Optional, Generator, Any
 
@@ -60,7 +62,7 @@ def create_thumbnail_in_memory(file_content) -> Optional[io.BytesIO]:
         img = Image.open(file_content)
         
         # 1. Convert to RGB if necessary (important for JPEGs)
-        if img.mode in ('RGBA', 'P'):
+        if img.mode in ('RGBA', 'P', 'LA', 'L', 'CMYK'):
             img = img.convert('RGB')
             
         # 2. Create the thumbnail (maintaining aspect ratio)
@@ -71,13 +73,20 @@ def create_thumbnail_in_memory(file_content) -> Optional[io.BytesIO]:
         img.save(thumbnail_stream, format='JPEG', quality=85)
         thumbnail_stream.seek(0)
         
-        file_content.seek(0) # Reset main file pointer for MinIO upload
+        file_content.seek(0)
 
         return thumbnail_stream
         
     except Exception as e:
-        print(f"Could not create thumbnail: {e}")
-        file_content.seek(0)
+        
+        print(f"⚠️  Could not create thumbnail: {type(e).__name__}: {e}")
+        
+        try:
+            file_content.seek(0)
+        
+        except:
+            pass
+        
         return None
 
 
@@ -88,6 +97,32 @@ def extract_exif_data(file_content) -> Optional[dict[str, any]]:
     Args:
         file_content: SpooledTemporaryFile object (the raw UploadFile.file).
     """
+    def make_json_serializable(value):
+        """Recursively convert EXIF values to JSON-serializable types."""
+        if value is None:
+            return None
+        elif isinstance(value, IFDRational):
+            return float(value)
+        elif isinstance(value, bytes):
+            # Remove null bytes and try to decode as UTF-8
+            try:
+                cleaned = value.replace(b'\x00', b'')
+                return cleaned.decode('utf-8', errors='ignore')
+            except (UnicodeDecodeError, AttributeError):
+                return value.hex()
+        elif isinstance(value, str):
+            # Remove null bytes from strings (PostgreSQL can't handle them)
+            return value.replace('\x00', '')
+        elif isinstance(value, (list, tuple)):
+            return [make_json_serializable(item) for item in value]
+        elif isinstance(value, dict):
+            return {str(k).replace('\x00', ''): make_json_serializable(v) for k, v in value.items()}
+        elif isinstance(value, (int, float, bool)):
+            return value
+        else:
+            # For any other unknown type, convert to string and remove null bytes
+            return str(value).replace('\x00', '')
+    
     try:
         # 1. Reset file pointer to the beginning for Image.open()
         file_content.seek(0)
@@ -102,16 +137,17 @@ def extract_exif_data(file_content) -> Optional[dict[str, any]]:
 
         exif_data = {}
         
-        # 4. Convert tag IDs to human-readable names
+        # 4. Convert tag IDs to human-readable names and sanitize values
         for tag_id, value in exif_raw.items():
-            tag_name = TAGS.get(tag_id, tag_id)
+            tag_name = TAGS.get(tag_id, str(tag_id))
             
-            # Simple sanitization: convert non-standard types (like tuples from 
-            # Pillow) to strings to ensure JSON serialization works later.
-            if isinstance(value, tuple) or isinstance(value, bytes):
-                value = str(value)
-                
-            exif_data[tag_name] = value
+            try:
+                # Convert to JSON-serializable format
+                exif_data[tag_name] = make_json_serializable(value)
+            except Exception as e:
+                # If conversion fails, store as string
+                print(f"Warning: Could not serialize EXIF tag {tag_name}: {e}")
+                exif_data[tag_name] = str(value)
 
         return exif_data
         
@@ -253,6 +289,7 @@ async def upload_photo(
     try:
         # UploadFile.file is the raw SpooledTemporaryFile object.
         file_content = file.file
+        file_content.seek(0)
 
         # 2. ASYNCHRONOUSLY RUN BLOCKING MINIO UPLOAD
         # We use anyio to run the synchronous put_object_sync function in a worker thread.
