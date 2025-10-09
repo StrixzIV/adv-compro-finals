@@ -182,7 +182,19 @@ async def login(form_data: Annotated[OAuth2PasswordRequestForm, Depends()]):
     return {"access_token": access_token, "token_type": "bearer"}
 
 
-# NOTE: FOR TESTING ONLY! REMOVE LATER
-@auth_route.get("/me")
-async def read_current_user(current_user: Annotated[dict, Depends(get_current_user)]):
-    return current_user
+@auth_route.get("/userdata", response_model=User)
+async def get_user_data(user_id: Annotated[uuid.UUID, Depends(get_uid)]):
+
+    query = "SELECT id, username, email FROM users WHERE id = :id"
+    user_info = await database.fetch_one(query=query, values={"id": user_id})
+
+    if not user_info:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+
+    user_dict = dict(user_info)
+    user_dict["id"] = str(user_dict["id"])
+
+    return user_dict

@@ -13,11 +13,11 @@ import {
   Heart,
   Trash2,
   LayoutDashboard,
-  Settings,
   Search,
   Filter,
   LogOut,
-  PlusCircle
+  PlusCircle,
+  UserCircle2
 } from "lucide-react";
 
 import UploadPanel from "./components/UploadPanel";
@@ -30,7 +30,7 @@ import AlbumCard from "./components/AlbumCard";
 import CreateAlbumModal from "./components/CreateAlbumModal";
 import AddPhotosToAlbumModal from "./components/AddPhotosToAlbumModal";
 
-import { PhotoItem, GalleryItem, ViewType, AlbumListItem, AlbumDetailData } from "./interfaces/types";
+import { PhotoItem, GalleryItem, ViewType, AlbumListItem, AlbumDetailData, UserData } from "./interfaces/types";
 
 const API_BASE_URL = 'http://localhost:8000';
 
@@ -62,6 +62,8 @@ export default function PhotoCloud() {
 
   const [items, setItems] = useState<GalleryItem[]>([]);
   const [albums, setAlbums] = useState<AlbumListItem[]>([]);
+
+  const [userData, setUserData] = useState<UserData | null>(null);
   
   const [previewId, setPreviewId] = useState<string | null>(null);
   
@@ -95,7 +97,6 @@ export default function PhotoCloud() {
     favorites: "Favorites",
     trash: "Trash",
     dashboard: "Dashboard",
-    settings: "Settings",
     album_detail: "album_detail",
   };
 
@@ -658,6 +659,23 @@ export default function PhotoCloud() {
     }
   }, [activeAlbumId, activeAlbumTitle, fetchAlbums]);
 
+  const fetchUser = useCallback(async () => {
+
+    const accessToken = localStorage.getItem("accessToken");
+    if (!accessToken) return;
+
+    const apiUrl = `${API_BASE_URL}/api/v1/auth/userdata`;
+
+    const response = await fetch(apiUrl, {
+        method: 'GET',
+        headers: { "Authorization": `Bearer ${accessToken}` },
+    });
+
+    const data = await response.json() as UserData;
+    setUserData(data);
+
+  }, [isAuthenticated])
+
   useEffect(() => {
       if (view === "album_detail" && activeAlbumId) {
           fetchAlbumDetails(activeAlbumId);
@@ -670,8 +688,9 @@ export default function PhotoCloud() {
 
   useEffect(() => {
     if (isAuthenticated) {
-      fetchPhotos();
-      fetchAlbums();
+        fetchUser();
+        fetchPhotos();
+        fetchAlbums();
     }
   }, [isAuthenticated, fetchPhotos, fetchAlbums]);
 
@@ -831,16 +850,7 @@ export default function PhotoCloud() {
           </section>
         );
       case "dashboard":
-        return <DashboardCharts items={items} />;
-      case "settings":
-        return (
-          <div className="space-y-4">
-            <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-gray-200">
-              <div className="text-sm font-medium">Appearance</div>
-              <div className="mt-2 text-xs text-gray-500">(Demo) Your theme is set to Light.</div>
-            </div>
-          </div>
-        );
+        return <DashboardCharts />;
       default:
         return null;
     }
@@ -867,8 +877,6 @@ export default function PhotoCloud() {
 
           <div className="mt-auto space-y-2">
             
-            <SidebarLink icon={Settings} label="Settings" active={view === "settings"} onClick={() => setView("settings")} />
-            
             <SidebarLink 
                 icon={LogOut} 
                 label="Logout" 
@@ -876,10 +884,10 @@ export default function PhotoCloud() {
             />
             
             <div className="flex items-center gap-3 rounded-xl px-3 py-2">
-              <div className="grid h-9 w-9 place-items-center rounded-full bg-gray-100 text-xs font-semibold">CT</div>
+              <div className="grid h-9 w-9 place-items-center rounded-full bg-gray-100 text-xs font-semibold"><UserCircle2 /></div>
               <div className="min-w-0">
-                <div className="truncate text-sm font-medium">Chindhanai Tho...</div>
-                <div className="truncate text-xs text-gray-500">chindew2549@gmail.com</div>
+                <div className="truncate text-sm font-medium">{userData?.username}</div>
+                <div className="truncate text-xs text-gray-500">{userData?.email}</div>
               </div>
             </div>
           </div>

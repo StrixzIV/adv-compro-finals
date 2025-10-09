@@ -39,7 +39,7 @@ export type Photo = {
   trashed?: boolean;
 };
 
-export type ViewType = "photos" | "upload" | "albums" | "favorites" | "trash" | "dashboard" | "settings" | "album_detail";
+export type ViewType = "photos" | "upload" | "albums" | "favorites" | "trash" | "dashboard" | "album_detail";
 
 export type SidebarLinkProps = {
   icon: React.ComponentType<{ size?: number }>;
@@ -97,4 +97,10 @@ export type AddPhotosToAlbumModalProps = {
 
 export interface AlbumDetailData extends AlbumListItem {
   photos: GalleryItem[]; 
+}
+
+export type UserData = {
+    id: string;
+    username: string;
+    email: string;
 }

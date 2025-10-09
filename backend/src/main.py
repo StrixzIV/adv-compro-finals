@@ -6,15 +6,17 @@ from routes.auth import auth_route
 from routes.oauth import oauth_route
 from routes.storage import storage_router
 from routes.album import album_router
+from routes.dashboard import dashboard_router
 
 from db import connect_db, disconnect_db
 
 app = FastAPI()
 app.include_router(healthcheck_route, prefix="/api/v1")
-app.include_router(auth_route, prefix="/auth/v1")
+app.include_router(auth_route, prefix="/api/v1")
 app.include_router(oauth_route, prefix="/api/v1")
 app.include_router(storage_router, prefix="/api/v1")
 app.include_router(album_router, prefix="/api/v1")
+app.include_router(dashboard_router, prefix="/api/v1")
 
 app.add_middleware(
     CORSMiddleware,
