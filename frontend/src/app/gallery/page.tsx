@@ -25,7 +25,6 @@ import SidebarLink from "./components/SidebarLink";
 import PhotoCard from "./components/PhotoCard";
 import EmptyState from "./components/EmptyState";
 import PreviewModal from "./components/PreviewModal";
-import DashboardCharts from "./components/DashboardCharts";
 import AlbumCard from "./components/AlbumCard";
 import CreateAlbumModal from "./components/CreateAlbumModal";
 import AddPhotosToAlbumModal from "./components/AddPhotosToAlbumModal";
@@ -849,10 +848,14 @@ export default function PhotoCloud() {
             )}
           </section>
         );
+
       case "dashboard":
-        return <DashboardCharts />;
+        router.push('/dashboard');
+        return null;
+        
       default:
         return null;
+    
     }
   }
 

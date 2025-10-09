@@ -73,6 +73,7 @@ services:
     volumes:
       - ./backend/src:/var/backend/src:rw
       - ./backend/tools:/var/backend/tools:ro
+      - ./logs:/var/backend/logs:rw
     depends_on:
       - db
     networks:
