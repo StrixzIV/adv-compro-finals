@@ -31,6 +31,7 @@ export function RegisterPage() {
 
     const handleInputChange = (field: string, value: string) => {
         setFormData(prev => ({ ...prev, [field]: value }));
+        setError(""); // Clear error on new input
     };
 
     const getPasswordStrength = (password: string) => {
@@ -50,24 +51,40 @@ export function RegisterPage() {
         e.preventDefault();
         
         if (formData.password !== formData.confirmPassword) {
+            setError("Passwords do not match.");
             return;
         }
 
         setIsLoading(true);
-        
-        // Simulate API call delay
-        await new Promise(resolve => setTimeout(resolve, 1500));
-        
-        // onRegister({
-        //     username: formData.username,
-        //     lastName: formData.lastName,
-        //     email: formData.email,
-        //     password: formData.password
-        // });
+        setError("");
 
-        setIsLoading(false);
-        router.push('/login');
+        try {
+            const response = await fetch('http://localhost:8000/auth/v1/auth/register', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    username: formData.username,
+                    email: formData.email,
+                    password: formData.password,
+                }),
+            });
 
+            if (response.ok) {
+                // Registration successful, redirect to login
+                router.push('/login');
+            } else {
+                // Handle errors from the backend
+                const errorData = await response.json();
+                setError(errorData.detail || "An unexpected error occurred.");
+            }
+        } catch (err) {
+            // Handle network errors
+            setError("Failed to connect to the server. Please try again later.");
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     const isFormValid = 
@@ -80,6 +97,7 @@ export function RegisterPage() {
     return (
 
         <div className="min-h-screen flex">
+            {/* Left side - Image */}
             <div className="hidden lg:flex lg:flex-1 relative">
                 <img
                     src="https://images.unsplash.com/photo-1728234040187-61651ec91d4e?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxwcm9mZXNzaW9uYWwlMjBwaG90b2dyYXBoeSUyMHdvcmtzcGFjZXxlbnwxfHx8fDE3NTc2NTQ3OTZ8MA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral"
