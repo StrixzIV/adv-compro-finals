@@ -691,7 +691,7 @@ export default function PhotoCloud() {
         fetchPhotos();
         fetchAlbums();
     }
-  }, [isAuthenticated, fetchPhotos, fetchAlbums]);
+  }, [isAuthenticated, fetchPhotos, fetchAlbums, fetchUser]);
 
   // --- Conditional Renders ---
   if (isLoading) {
@@ -875,7 +875,7 @@ export default function PhotoCloud() {
             <SidebarLink icon={Album} label="Albums" active={view === "albums"} onClick={() => setView("albums")} />
             <SidebarLink icon={Heart} label={`Favorites (${items.filter(p => p.favorite && !p.trashed).length})`} active={view === "favorites"} onClick={() => setView("favorites")} />
             <SidebarLink icon={Trash2} label={`Trash (${items.filter(p => p.trashed).length})`} active={view === "trash"} onClick={() => setView("trash")} />
-            <SidebarLink icon={LayoutDashboard} label="Dashboard" active={view === "dashboard"} onClick={() => setView("dashboard")} />
+            {userData?.role !== 'admin' ? '' : <SidebarLink icon={LayoutDashboard} label="Dashboard" active={view === "dashboard"} onClick={() => setView("dashboard")} />}
           </nav>
 
           <div className="mt-auto space-y-2">

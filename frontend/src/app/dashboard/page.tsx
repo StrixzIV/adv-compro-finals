@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from 'next/navigation'
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   ResponsiveContainer,
@@ -56,26 +57,57 @@ const StatusIndicator = ({ status }: { status: 'Online' | 'Offline' }) => {
 
 
 export default function DashboardCharts() {
+
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const router = useRouter();
+
   useEffect(() => {
     const fetchData = async () => {
+
       try {
-        const response = await fetch('http://localhost:8000/api/v1/dashboard');
+
+        const accessToken = localStorage.getItem("accessToken");
+
+        if (!accessToken) return '';
+        
+        const response = await fetch('http://localhost:8000/api/v1/dashboard', {
+          method: "GET",
+          headers: {
+            "Authorization": `Bearer ${accessToken}`,
+          },
+        });
+        
         if (!response.ok) {
+
+          if (response.status == 401) {
+            router.push('/login')
+            return ;
+          }
+
+          else if (response.status == 403) {
+            router.push('/gallery')
+            return ;
+          }
+
           throw new Error(`HTTP error! Status: ${response.status}`);
         }
         const apiData: DashboardData = await response.json();
         setData(apiData);
         setError(null);
-      } catch (e: any) {
+      }
+      
+      catch (e: any) {
         setError(e.message);
         console.error("Failed to fetch dashboard data:", e);
-      } finally {
+      }
+      
+      finally {
         setLoading(false);
       }
+      
     };
 
     fetchData();
