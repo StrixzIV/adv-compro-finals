@@ -46,46 +46,32 @@ async def oauth_callback(request: Request):
     }
 
     async with aiohttp.ClientSession() as session:
-    
-        token_url = 'https://oauth2.googleapis.com/token'
-    
-        try:
-            async with session.post(token_url, data=token_params) as resp:
-
-                if resp.status != 200:
-                    print(f"Error exchanging token: {await resp.text()}")
-                    return RedirectResponse(f"{env.HOST_URL}/login?error=token_exchange_failed", status_code=status.HTTP_302_FOUND)
-
-                token_data = await resp.json()
-
-        except aiohttp.ClientError as e:
-            print(f"Network error during token exchange: {e}")
-            return RedirectResponse(f"{env.HOST_URL}/login?error=network_error", status_code=status.HTTP_302_FOUND)
+        
+        async with session.post('https://oauth2.googleapis.com/token', data=token_params) as resp:
+            token_data = await resp.json()
 
         id_token = token_data.get('id_token')
         
-        if not id_token:
-            return RedirectResponse(f"{env.HOST_URL}/login?error=no_id_token", status_code=status.HTTP_302_FOUND)
-
         try:
+            
+            decoded_token = jwt.decode(id_token, options={"verify_signature": False})
 
-            user_info = jwt.decode(id_token, options={"verify_signature": False})
+            google_id = decoded_token.get('sub')
+            email = decoded_token.get('email')
+            username = decoded_token.get('name')
 
-            google_id = user_info.get('sub')
-            email = user_info.get('email')
-            username = user_info.get('name')
+            query = "SELECT id, role FROM users WHERE google_id = :google_id"
+            existing_user = await database.fetch_one(query=query, values={"google_id": google_id})
 
             user_id = None
-
-            query = "SELECT id FROM users WHERE google_id = :google_id"
-            existing_user = await database.fetch_one(query=query, values={"google_id": google_id})
+            user_role = 'user'
 
             if not existing_user:
 
                 query = """
                     INSERT INTO users (google_id, email, username)
                     VALUES (:google_id, :email, :username)
-                    RETURNING id; -- Added RETURNING id to get the new user's ID
+                    RETURNING id;
                 """
 
                 values = {
@@ -99,13 +85,14 @@ async def oauth_callback(request: Request):
                 
             else:
                 user_id = existing_user['id']
+                user_role = existing_user['role']
 
             if not user_id:
                 return RedirectResponse(f"{env.HOST_URL}/login?error=user_id_error", status_code=status.HTTP_302_FOUND)
 
             access_token_expires = timedelta(minutes=30)
             access_token = create_access_token(
-                data={"sub": str(user_id)}, 
+                data={"sub": str(user_id), "role": user_role}, 
                 expires_delta=access_token_expires
             )
 
@@ -116,3 +103,7 @@ async def oauth_callback(request: Request):
         except jwt.exceptions.DecodeError as e:
             print(f"Error decoding JWT token: {e}")
             return RedirectResponse(f"{env.HOST_URL}/login?error=invalid_token", status_code=status.HTTP_302_FOUND)
+        
+        except Exception as e:
+            print(f"An unexpected error occurred: {e}")
+            return RedirectResponse(f"{env.HOST_URL}/login?error=unknown_error", status_code=status.HTTP_302_FOUND)

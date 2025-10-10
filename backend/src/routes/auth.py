@@ -30,6 +30,7 @@ class User(BaseModel):
     id: str
     username: str
     email: EmailStr
+    role: str
 
 
 class UserRegistration(BaseModel):
@@ -95,7 +96,9 @@ async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)]):
     try:
 
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+
         user_id: str = payload.get("sub")
+        user_role: str = payload.get("role")
 
         if user_id is None:
             raise credentials_exception
@@ -103,31 +106,18 @@ async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)]):
     except jwt.PyJWTError:
         raise credentials_exception
 
-    return {"id": user_id}
+    return {"id": user_id, "role": user_role}
 
 
-async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)]):
+async def get_admin_user(current_user: Annotated[dict, Depends(get_current_user)]):
 
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-
-    try:
-
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        user_id: str = payload.get("sub")
-
-        if user_id is None:
-            raise credentials_exception
-
-    except jwt.PyJWTError:
-        raise credentials_exception
-
-    # You could fetch the user from the database here if needed, but for
-    # a basic auth system, we'll just return the user ID.
-    return {"id": user_id}
+    if current_user.get("role") != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="The user is not an admin"
+        )
+    
+    return current_user
 
 
 @auth_route.post("/register")
@@ -164,7 +154,7 @@ async def register_user(user_data: UserRegistration):
 @auth_route.post("/login", response_model=Token)
 async def login(form_data: Annotated[OAuth2PasswordRequestForm, Depends()]):
 
-    query = "SELECT id, password_hash FROM users WHERE email = :email"
+    query = "SELECT id, password_hash, role FROM users WHERE email = :email"
     user_data = await database.fetch_one(query=query, values={"email": form_data.username})
 
     if not user_data or not verify_password(form_data.password, user_data.password_hash):
@@ -176,7 +166,7 @@ async def login(form_data: Annotated[OAuth2PasswordRequestForm, Depends()]):
 
     access_token_expires = timedelta(minutes=30)
     access_token = create_access_token(
-        data={"sub": str(user_data.id)}, expires_delta=access_token_expires
+        data={"sub": str(user_data.id), "role": user_data.role}, expires_delta=access_token_expires
     )
 
     return {"access_token": access_token, "token_type": "bearer"}
@@ -185,7 +175,7 @@ async def login(form_data: Annotated[OAuth2PasswordRequestForm, Depends()]):
 @auth_route.get("/userdata", response_model=User)
 async def get_user_data(user_id: Annotated[uuid.UUID, Depends(get_uid)]):
 
-    query = "SELECT id, username, email FROM users WHERE id = :id"
+    query = "SELECT id, username, email, role FROM users WHERE id = :id"
     user_info = await database.fetch_one(query=query, values={"id": user_id})
 
     if not user_info:

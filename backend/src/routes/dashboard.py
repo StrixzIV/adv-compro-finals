@@ -8,6 +8,8 @@ from pydantic import BaseModel, Field
 from minio.error import S3Error
 
 from lib.environ import env
+
+from routes.auth import get_admin_user
 from routes.storage import minio_client
 
 # Assuming you have a get_db function for database sessions
@@ -19,6 +21,7 @@ LOG_FILE_PATH = "/var/backend/logs/api.log"
 dashboard_router = APIRouter(
     prefix="/dashboard",
     tags=["Dashboard"],
+    dependencies=[Depends(get_admin_user)]
 )
 
 class ServiceStatus(BaseModel):
