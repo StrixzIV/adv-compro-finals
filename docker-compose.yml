@@ -72,6 +72,11 @@ services:
       GOOGLE_OAUTH_CLIENT_SECRETS: ${GOOGLE_OAUTH_CLIENT_SECRETS}
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MAIL_USERNAME: ${MAIL_USERNAME}
+      MAIL_PASSWORD: ${MAIL_PASSWORD}
+      MAIL_FROM: ${MAIL_FROM}
+      MAIL_SERVER: ${MAIL_SERVER}
+      MAIL_PORT: ${MAIL_PORT}
     volumes:
       - ./backend/src:/var/backend/src:rw
       - ./backend/tools:/var/backend/tools:ro
