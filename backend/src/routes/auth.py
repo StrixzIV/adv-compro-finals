@@ -1,10 +1,12 @@
 import jwt
 import uuid
+import secrets
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi_mail import FastMail, MessageSchema, ConnectionConfig
 
-from datetime import timedelta
+from datetime import timedelta, timezone
 from datetime import datetime as dt
 
 from typing import Annotated
@@ -20,6 +22,18 @@ SECRET_KEY = env.JWT_SECRET_KEY
 ALGORITHM = "HS256"
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/v1/token")
+
+conf = ConnectionConfig(
+    MAIL_USERNAME = env.MAIL_USERNAME,
+    MAIL_PASSWORD = env.MAIL_PASSWORD,
+    MAIL_FROM = env.MAIL_FROM,
+    MAIL_PORT = int(env.MAIL_PORT),
+    MAIL_SERVER = env.MAIL_SERVER,
+    MAIL_STARTTLS = True,
+    MAIL_SSL_TLS = False,
+    USE_CREDENTIALS = True,
+    VALIDATE_CERTS = True
+)
 
 class Token(BaseModel):
     access_token: str
@@ -37,6 +51,15 @@ class UserRegistration(BaseModel):
     username: str
     password: str
     email: EmailStr
+
+
+class PasswordResetRequest(BaseModel):
+    email: EmailStr
+
+
+class PasswordReset(BaseModel):
+    token: str
+    new_password: str
 
 
 def get_password_hash(password):
@@ -83,6 +106,34 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None):
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
     return encoded_jwt
+
+
+async def send_password_reset_email(email: str, token: str):
+
+    """
+    Sends a real email with the password reset link using fastapi-mail.
+    """
+    
+    reset_link = f"http://localhost:3000/password-reset?token={token}"
+
+    html_body = f"""
+    <p>Hello,</p>
+    <p>You requested a password reset. Please click the link below to set a new password:</p>
+    <p><a href="{reset_link}">Reset Your Password</a></p>
+    <p>This link will expire in 15 minutes.</p>
+    <p>If you did not request a password reset, please ignore this email.</p>
+    """
+
+    message = MessageSchema(
+        subject="Password Reset Request",
+        recipients=[email],
+        body=html_body,
+        subtype="html"
+    )
+
+    fm = FastMail(conf)
+    await fm.send_message(message)
+    print(f"Password reset email sent to {email}")
 
 
 async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)]):
@@ -188,3 +239,61 @@ async def get_user_data(user_id: Annotated[uuid.UUID, Depends(get_uid)]):
     user_dict["id"] = str(user_dict["id"])
 
     return user_dict
+
+
+@auth_route.post("/request-password-reset")
+async def request_password_reset(request: PasswordResetRequest, background_tasks: BackgroundTasks):
+    
+    query = "SELECT id FROM users WHERE email = :email"
+    user = await database.fetch_one(query=query, values={"email": request.email})
+
+    # To prevent user enumeration, always return a success message.
+    if user:
+        # Generate a secure, URL-safe token.
+        token = secrets.token_urlsafe(32)
+        
+        expires_delta = timedelta(minutes=15)
+        expires_at = dt.now(timezone.utc) + expires_delta
+
+        insert_query = """
+            INSERT INTO password_resets (user_id, token, expires_at)
+            VALUES (:user_id, :token, :expires_at)
+        """
+
+        values = {
+            "user_id": user['id'],
+            "token": token,
+            "expires_at": expires_at
+        }
+
+        await database.execute(query=insert_query, values=values)
+        background_tasks.add_task(send_password_reset_email, request.email, token)
+
+    return {"message": "If an account with that email exists, a password reset link has been sent."}
+
+
+@auth_route.post("/reset-password")
+async def reset_password(request: PasswordReset):
+
+    select_query = """
+        SELECT user_id, expires_at FROM password_resets WHERE token = :token
+    """
+    reset_data = await database.fetch_one(query=select_query, values={"token": request.token})
+
+    if not reset_data or dt.now(timezone.utc) > reset_data['expires_at']:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired password reset link."
+        )
+
+    new_hashed_password = get_password_hash(request.new_password)
+    update_query = "UPDATE users SET password_hash = :password_hash WHERE id = :id"
+    await database.execute(
+        query=update_query, 
+        values={"password_hash": new_hashed_password, "id": reset_data['user_id']}
+    )
+
+    delete_query = "DELETE FROM password_resets WHERE token = :token"
+    await database.execute(query=delete_query, values={"token": request.token})
+
+    return {"message": "Password has been reset successfully."}
