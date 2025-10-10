@@ -212,9 +212,11 @@ export function LoginPage() {
                     </div>
 
                     <div className="flex justify-center"> 
-                        <Button variant="link" className="p-0 h-auto">
-                            Forgot password?
-                        </Button>
+                        <Link href="/forgot-password">
+                            <Button variant="link" className="p-0 h-auto">
+                                Forgot password?
+                            </Button>
+                        </Link>
                     </div>
 
                     <div className="flex justify-center"> 
