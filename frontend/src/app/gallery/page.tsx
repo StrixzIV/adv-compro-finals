@@ -506,6 +506,8 @@ export default function PhotoCloud() {
             src: await loadAsset(`${API_BASE_URL}/api/v1${item.file_url}`),
             thumbnail: await loadAsset(`${API_BASE_URL}/api/v1${item.thumbnail_url}`),
             preview: false,
+            filename: item.filename,
+            exif_data: item.exif_data,
             favorite: item.is_favorite,
             trashed: item.is_deleted,
           }));
@@ -983,12 +985,6 @@ export default function PhotoCloud() {
                     className="w-full rounded-xl border border-gray-200 bg-white py-2 pl-9 pr-3 text-sm outline-none ring-0 placeholder:text-gray-400 focus:border-gray-300"
                   />
                 </div>
-              )}
-              {view === "photos" && (
-                <button className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm shadow-sm hover:bg-gray-50">
-                  <Filter size={16} />
-                  Filters
-                </button>
               )}
             </div>
           </header>

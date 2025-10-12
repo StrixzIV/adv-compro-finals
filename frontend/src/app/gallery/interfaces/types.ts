@@ -23,8 +23,8 @@ export interface GalleryItem {
   preview: boolean;
   trashed: boolean;
   favorite: boolean;
-  // Note: Add other properties from PhotoItem if your component needs them
-  // e.g., filename: string;
+  filename?: string;
+  exif_data?: Record<string, any> | null;
 }
 
 export type Photo = {
@@ -33,10 +33,12 @@ export type Photo = {
   date: string;
   size: string;
   src: string;
+  filename?: string;
   thumbnail: string;
   preview?: boolean;
   favorite?: boolean;
   trashed?: boolean;
+  exif_data?: Record<string, any> | null;
 };
 
 export type ViewType = "photos" | "upload" | "albums" | "favorites" | "trash" | "dashboard" | "album_detail";
