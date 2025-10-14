@@ -23,7 +23,7 @@ function ResetPasswordComponent() {
     const [message, setMessage] = useState("");
 
     useEffect(() => {
-        const urlToken = searchParams.get('token');
+        const urlToken = searchParams!.get('token');
         if (urlToken) {
             setToken(urlToken);
         } else {
