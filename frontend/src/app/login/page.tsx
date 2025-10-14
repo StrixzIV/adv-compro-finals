@@ -203,7 +203,7 @@ export function LoginPage() {
                     </div>
                     </Link>
 
-                    <div className="flex justify-center"> 
+                    <div className="flex justify-center mt-4"> 
                         <Link href="/register">
                             <Button variant="link" className="p-0 h-auto">
                                 No account?
