@@ -698,7 +698,7 @@ async def fetch_trashed_photos(user_id: Annotated[uuid.UUID, Depends(get_uid)]):
     Fetches all SOFT-DELETED photos for the authenticated user (Trash view).
     """
     query = """
-        SELECT id, file_path, filename, caption, upload_date, exif_data, is_deleted
+        SELECT id, file_path, filename, caption, upload_date, exif_data, is_deleted, is_favorite
         FROM photos
         WHERE user_id = :user_id AND is_deleted = TRUE
         ORDER BY upload_date DESC;
