@@ -2,10 +2,14 @@ import io
 import uuid
 import json
 import anyio
+import piexif
 import datetime
 
 from PIL import Image
 from PIL.ExifTags import TAGS
+from PIL.TiffImagePlugin import IFDRational
+from pillow_heif import register_heif_opener
+
 from pydantic import BaseModel
 from typing import Annotated, Optional, Generator, Any
 
@@ -22,6 +26,8 @@ from routes.auth import get_uid, oauth2_scheme
 
 THUMBNAIL_SIZE = (200, 200)
 MINIO_BUCKET_NAME = 'media'
+
+register_heif_opener()
 
 minio_client = Minio(
     endpoint='minio:9000',
@@ -60,7 +66,7 @@ def create_thumbnail_in_memory(file_content) -> Optional[io.BytesIO]:
         img = Image.open(file_content)
         
         # 1. Convert to RGB if necessary (important for JPEGs)
-        if img.mode in ('RGBA', 'P'):
+        if img.mode in ('RGBA', 'P', 'LA', 'L', 'CMYK'):
             img = img.convert('RGB')
             
         # 2. Create the thumbnail (maintaining aspect ratio)
@@ -71,57 +77,114 @@ def create_thumbnail_in_memory(file_content) -> Optional[io.BytesIO]:
         img.save(thumbnail_stream, format='JPEG', quality=85)
         thumbnail_stream.seek(0)
         
-        file_content.seek(0) # Reset main file pointer for MinIO upload
+        file_content.seek(0)
 
         return thumbnail_stream
         
     except Exception as e:
-        print(f"Could not create thumbnail: {e}")
-        file_content.seek(0)
+        
+        print(f"⚠️  Could not create thumbnail: {type(e).__name__}: {e}")
+        
+        try:
+            file_content.seek(0)
+        
+        except:
+            pass
+        
         return None
 
 
 def extract_exif_data(file_content) -> Optional[dict[str, any]]:
+    
     """
     Synchronously extracts EXIF data from an image file stream.
     
     Args:
         file_content: SpooledTemporaryFile object (the raw UploadFile.file).
     """
-    try:
-        # 1. Reset file pointer to the beginning for Image.open()
-        file_content.seek(0)
-        
-        # 2. Open the image using Pillow
-        img = Image.open(file_content)
-        
-        # 3. Get EXIF data
-        exif_raw = img._getexif()
-        if exif_raw is None:
+    
+    def make_json_serializable(value):
+        """Recursively convert EXIF values to JSON-serializable types."""
+        if value is None:
             return None
+        elif isinstance(value, IFDRational):
+            return float(value)
+        elif isinstance(value, bytes):
+            # Remove null bytes and try to decode as UTF-8
+            try:
+                cleaned = value.replace(b'\x00', b'')
+                return cleaned.decode('utf-8', errors='ignore')
+            except (UnicodeDecodeError, AttributeError):
+                return value.hex()
+        elif isinstance(value, str):
+            # Remove null bytes from strings (PostgreSQL can't handle them)
+            return value.replace('\x00', '')
+        elif isinstance(value, (list, tuple)):
+            return [make_json_serializable(item) for item in value]
+        elif isinstance(value, dict):
+            return {str(k).replace('\x00', ''): make_json_serializable(v) for k, v in value.items()}
+        elif isinstance(value, (int, float, bool)):
+            return value
+        else:
+            # For any other unknown type, convert to string and remove null bytes
+            return str(value).replace('\x00', '')
+    
+    full_metadata = {}
 
-        exif_data = {}
+    try:
         
-        # 4. Convert tag IDs to human-readable names
-        for tag_id, value in exif_raw.items():
-            tag_name = TAGS.get(tag_id, tag_id)
-            
-            # Simple sanitization: convert non-standard types (like tuples from 
-            # Pillow) to strings to ensure JSON serialization works later.
-            if isinstance(value, tuple) or isinstance(value, bytes):
-                value = str(value)
-                
-            exif_data[tag_name] = value
+        file_content.seek(0)
+        with Image.open(file_content) as img:
+            exif_raw = img._getexif()
+            if exif_raw:
+                for tag_id, value in exif_raw.items():
+                    tag_name = TAGS.get(tag_id, str(tag_id))
+                    try:
+                        full_metadata[tag_name] = make_json_serializable(value)
+                    except Exception as e:
+                        print(f"Warning: Could not serialize EXIF tag {tag_name}: {e}")
+                        full_metadata[tag_name] = str(value)
 
-        return exif_data
-        
+        file_content.seek(0)
+        exif_dict = None
+        try:
+            with Image.open(file_content) as img:
+                if "exif" in img.info:
+                    exif_dict = piexif.load(img.info['exif'])
+        except Exception:
+            file_content.seek(0)
+            try:
+                exif_dict = piexif.load(file_content.read())
+            except Exception:
+                pass  # No EXIF data found
+
+        if exif_dict:
+            # Extract Photo Date (DateTimeOriginal or DateTimeDigitized)
+            photo_date_str = None
+            if 'Exif' in exif_dict and piexif.ExifIFD.DateTimeOriginal in exif_dict['Exif']:
+                 photo_date_str = exif_dict['Exif'][piexif.ExifIFD.DateTimeOriginal]
+            elif 'Exif' in exif_dict and piexif.ExifIFD.DateTimeDigitized in exif_dict['Exif']:
+                 photo_date_str = exif_dict['Exif'][piexif.ExifIFD.DateTimeDigitized]
+
+            if photo_date_str:
+                try:
+                    date_str = photo_date_str.decode('utf-8')
+                    photo_date = datetime.strptime(date_str, '%Y:%m:%d %H:%M:%S')
+                    # Add to our main dict to standardize it
+                    full_metadata['DateTimeOriginal'] = photo_date.isoformat()
+                except (ValueError, TypeError, AttributeError):
+                    pass # Ignore if date can't be parsed
+
+        return full_metadata if full_metadata else None
+
     except Exception as e:
-        # Catch exceptions like: not an image, corrupted file, missing Pillow
-        print(f"Could not extract EXIF data: {e}")
+        print(f"Could not extract metadata: {e}")
         return None
     finally:
-        # 5. Reset file pointer again for the upcoming MinIO upload thread
-        file_content.seek(0)
+        try:
+            file_content.seek(0)
+        except Exception:
+            pass
 
 
 def _process_photo_record(record) -> PhotoGalleryItem:
@@ -158,7 +221,7 @@ def _process_photo_record(record) -> PhotoGalleryItem:
         file_url=file_url,
         thumbnail_url=thumbnail_url,
         exif_data=parsed_exif_data,
-        is_deleted=record["is_deleted"], # 🔑 Include soft-delete status
+        is_deleted=record["is_deleted"],
         is_favorite=record["is_favorite"],
         size_bytes=stat.size
     )
@@ -253,6 +316,7 @@ async def upload_photo(
     try:
         # UploadFile.file is the raw SpooledTemporaryFile object.
         file_content = file.file
+        file_content.seek(0)
 
         # 2. ASYNCHRONOUSLY RUN BLOCKING MINIO UPLOAD
         # We use anyio to run the synchronous put_object_sync function in a worker thread.
@@ -634,7 +698,7 @@ async def fetch_trashed_photos(user_id: Annotated[uuid.UUID, Depends(get_uid)]):
     Fetches all SOFT-DELETED photos for the authenticated user (Trash view).
     """
     query = """
-        SELECT id, file_path, filename, caption, upload_date, exif_data, is_deleted
+        SELECT id, file_path, filename, caption, upload_date, exif_data, is_deleted, is_favorite
         FROM photos
         WHERE user_id = :user_id AND is_deleted = TRUE
         ORDER BY upload_date DESC;

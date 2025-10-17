@@ -12,5 +12,7 @@ if [ ! -e uv.lock ]; then
   mv /var/backend/venv/uv.lock uv.lock
 fi
 
+chown -R alpine:alpine /var/backend/logs
+
 # Execute entry as user
 exec su -m alpine -c "sh /var/backend/tools/entry.sh $@"

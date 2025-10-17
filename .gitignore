@@ -1,3 +1,5 @@
 *.env
 data/
 minio/
+
+logs/*.log

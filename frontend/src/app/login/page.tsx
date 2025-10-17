@@ -1,4 +1,4 @@
-'use client';
+ 'use client';
 
 import { useState } from "react";
 import { useRouter } from 'next/navigation'
@@ -38,7 +38,7 @@ export function LoginPage() {
             formData.append('username', email); 
             formData.append('password', password);
 
-            const response = await fetch(`${FASTAPI_URL}/auth/v1/auth/login`, {
+            const response = await fetch(`${FASTAPI_URL}/api/v1/auth/login`, {
                 method: 'POST',
                 body: formData,
             });
@@ -203,7 +203,7 @@ export function LoginPage() {
                     </div>
                     </Link>
 
-                    <div className="flex justify-center"> 
+                    <div className="flex justify-center mt-4"> 
                         <Link href="/register">
                             <Button variant="link" className="p-0 h-auto">
                                 No account?
@@ -212,9 +212,11 @@ export function LoginPage() {
                     </div>
 
                     <div className="flex justify-center"> 
-                        <Button variant="link" className="p-0 h-auto">
-                            Forgot password?
-                        </Button>
+                        <Link href="/forgot-password">
+                            <Button variant="link" className="p-0 h-auto">
+                                Forgot password?
+                            </Button>
+                        </Link>
                     </div>
 
                     <div className="flex justify-center"> 

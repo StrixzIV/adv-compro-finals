@@ -1,10 +1,10 @@
 from databases import Database
-from lib.environ import env_single_use
+from lib.environ import env_single_use, env
 
 def init_db ():
    POSTGRES_USER = env_single_use('POSTGRES_USER')
    POSTGRES_PASSWORD = env_single_use('POSTGRES_PASSWORD')
-   POSTGRES_DB = env_single_use('POSTGRES_DB')
+   POSTGRES_DB = env.POSTGRES_DB
    POSTGRES_HOST = env_single_use('POSTGRES_HOST')
 
    DATABASE_URL = f"postgresql+asyncpg://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}/{POSTGRES_DB}"
