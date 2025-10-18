@@ -14,7 +14,7 @@ from pydantic import BaseModel, EmailStr
 from passlib.context import CryptContext
 
 from db import database
-from lib.environ import env
+from lib.environ import env, env_single_use
 
 auth_route = APIRouter(prefix = '/auth')
 
@@ -24,9 +24,9 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/v1/token")
 
 conf = ConnectionConfig(
-    MAIL_USERNAME = env.MAIL_USERNAME,
-    MAIL_PASSWORD = env.MAIL_PASSWORD,
-    MAIL_FROM = env.MAIL_FROM,
+    MAIL_USERNAME = env_single_use('MAIL_USERNAME'),
+    MAIL_PASSWORD = env_single_use('MAIL_PASSWORD'),
+    MAIL_FROM = env_single_use('MAIL_FROM'),
     MAIL_PORT = int(env.MAIL_PORT),
     MAIL_SERVER = env.MAIL_SERVER,
     MAIL_STARTTLS = True,
