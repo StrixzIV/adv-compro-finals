@@ -1,17 +1,22 @@
 import io
+import os
+import sys
 import uuid
 import pytest
 import datetime
 
+from dotenv import load_dotenv
+
 from fastapi.testclient import TestClient
 from unittest.mock import AsyncMock, MagicMock
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
 
 from main import app
 from routes.auth import get_password_hash
 from routes.storage import minio_client
 from db import database
 
-# Create a test client for the app
 client = TestClient(app)
 
 # --- Test Data ---
